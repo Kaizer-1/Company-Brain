@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     neo4j_password: str = "password"
 
     # Postgres
-    postgres_dsn: str = "postgresql+asyncpg://company_brain:password@localhost:5432/company_brain"
+    postgres_dsn: str = "postgresql+asyncpg://company_brain:password@localhost:5433/company_brain"
 
     # App
     app_name: str = "Company Brain"
