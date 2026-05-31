@@ -5,6 +5,7 @@ approximate nearest-neighbour search via the HNSW index.  See ADR 0003 and
 ADR 0009 for the choice of pgvector and HNSW.
 """
 
+from datetime import UTC
 import uuid
 
 from pgvector.sqlalchemy import Vector
@@ -62,7 +63,7 @@ class EventEmbeddingRepository(Repository[EventEmbedding]):
             embedding=data.embedding,
             model_name=data.model_name,
             model_version=data.model_version,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC)
         )
         self._session.add(row)
         await self._session.flush()

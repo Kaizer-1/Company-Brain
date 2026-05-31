@@ -5,7 +5,7 @@ re-extraction is auditable, and model-upgrade workflows can identify stale runs.
 """
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,7 +74,7 @@ class ExtractionRunRepository(Repository[ExtractionRun]):
         if row is None:
             return None
         row.status = ExtractionStatus.success
-        row.completed_at = datetime.utcnow()
+        row.completed_at = datetime.now(UTC)
         row.extracted_node_count = extracted_node_count
         row.extracted_edge_count = extracted_edge_count
         row.error_message = None
@@ -101,7 +101,7 @@ class ExtractionRunRepository(Repository[ExtractionRun]):
         if row is None:
             return None
         row.status = ExtractionStatus.partial if partial else ExtractionStatus.failed
-        row.completed_at = datetime.utcnow()
+        row.completed_at = datetime.now(UTC)
         row.error_message = error_message
         row.extracted_node_count = extracted_node_count
         row.extracted_edge_count = extracted_edge_count
