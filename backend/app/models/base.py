@@ -19,6 +19,12 @@ NAMING_CONVENTION: dict[str, str] = {
     "pk": "pk_%(table_name)s",
 }
 
+# backend/app/models/base.py
+from datetime import datetime, UTC
+
+def utc_now() -> datetime:
+    """Timezone-aware UTC now. Used as default for timestamp columns."""
+    return datetime.now(UTC)
 
 class Base(MappedAsDataclass, DeclarativeBase):
     """Base class for all ORM models.

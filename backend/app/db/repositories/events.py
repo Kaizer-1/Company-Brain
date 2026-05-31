@@ -7,6 +7,8 @@ raw SQLAlchemy ORM instances to callers.
 import uuid
 from datetime import datetime
 
+from click import DateTime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +16,7 @@ from app.db.repositories.base import Repository
 from app.models.events import Event
 from app.models.enums import SourceType
 from app.schemas.postgres import EventCreate, EventDTO
-
+from app.models.base import Base, utc_now
 
 def _to_dto(row: Event) -> EventDTO:
     return EventDTO(

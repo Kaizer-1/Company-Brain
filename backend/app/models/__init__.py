@@ -4,7 +4,7 @@ Import order matters: Base must be imported before any model so that
 ``Base.metadata`` is populated when Alembic's ``env.py`` imports it.
 """
 
-from app.models.base import Base
+from app.models.base import Base, utc_now
 from app.models.embeddings import EventEmbedding
 from app.models.enums import ExtractionStatus, SourceType
 from app.models.events import Event
@@ -17,4 +17,5 @@ __all__ = [
     "ExtractionRun",
     "ExtractionStatus",
     "SourceType",
+    "utc_now",
 ]

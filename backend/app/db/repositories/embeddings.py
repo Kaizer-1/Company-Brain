@@ -5,7 +5,6 @@ approximate nearest-neighbour search via the HNSW index.  See ADR 0003 and
 ADR 0009 for the choice of pgvector and HNSW.
 """
 
-from datetime import UTC
 import uuid
 
 from pgvector.sqlalchemy import Vector
@@ -16,6 +15,7 @@ from app.db.repositories.base import Repository
 from app.models.embeddings import EMBEDDING_DIM, EventEmbedding
 from app.schemas.postgres import EventEmbeddingCreate, EventEmbeddingDTO
 
+from datetime import UTC
 
 def _to_dto(row: EventEmbedding) -> EventEmbeddingDTO:
     # row.embedding may be a list[float] (freshly constructed ORM object) or a

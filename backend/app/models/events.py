@@ -12,7 +12,7 @@ from sqlalchemy import DateTime, Enum, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
+from app.models.base import Base, utc_now
 from app.models.enums import SourceType
 
 
@@ -63,7 +63,7 @@ class Event(Base):
     ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default_factory=datetime.utcnow,
+        default_factory=utc_now,
         init=False,
     )
 
