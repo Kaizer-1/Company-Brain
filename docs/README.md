@@ -27,6 +27,8 @@ ADRs record non-trivial design choices: what we picked, what we rejected, and wh
 | [decisions/0006-structured-logging.md](decisions/0006-structured-logging.md) | structlog over stdlib+json-logger and loguru; contextvars for request_id; JSON in prod |
 | [decisions/0007-graph-schema-v1.md](decisions/0007-graph-schema-v1.md) | Graph schema v1: 6 labels / 9 edges, backward-designed from killer queries; confidence on edges; validity-interval temporal model |
 | [decisions/0008-cypher-migration-strategy.md](decisions/0008-cypher-migration-strategy.md) | Homemade Python Cypher migration runner over neo4j-migrations/Liquibase; idempotent via `IF NOT EXISTS` + `_Migration` ledger |
+| [decisions/0009-postgres-event-store-design.md](decisions/0009-postgres-event-store-design.md) | Immutable events table, two-table split (events + embeddings), JSONB for metadata, extraction_runs audit, HNSW index |
+| [decisions/0010-alembic-migrations.md](decisions/0010-alembic-migrations.md) | Alembic over raw SQL runner / SQLModel create_all / Flyway; async via run_sync; applied at startup |
 
 ---
 
@@ -49,6 +51,7 @@ Long-form design documents. UX wireframes and visual artefacts arrive in Phase 4
 | File | Summary |
 |------|---------|
 | [design/graph-schema.md](design/graph-schema.md) | The Neo4j graph schema, designed backward from the 4 killer queries: 6 node labels, 9 relationship types, temporal/provenance/identity models, and each killer query written as validated Cypher |
+| [design/postgres-schema.md](design/postgres-schema.md) | The Postgres event store schema: three tables, HNSW vs IVFFlat argument, JSONB rationale, provenance contract, index explanations |
 
 ---
 
@@ -60,3 +63,4 @@ One doc per subphase. Contains Q&A pairs and key whiteboard concepts for that ph
 |------|---------|
 | [interview-prep/phase-1a-readiness.md](interview-prep/phase-1a-readiness.md) | 10 Q&A pairs: Neo4j vs Postgres, pgvector vs Pinecone, mypy strict, FastAPI vs Flask, monorepo, Docker healthchecks, uv vs poetry, pgvector internals, Neo4j driver, multi-tenancy |
 | [interview-prep/phase-1b-readiness.md](interview-prep/phase-1b-readiness.md) | 10 Q&A pairs: node-type count, confidence on edges, entity resolution honesty, temporal model + limits, KQ2 execution, Cypher migrations vs write-time DDL, dangling edges, models vs migrations, production migration strategy, biggest weakness |
+| [interview-prep/phase-1c-readiness.md](interview-prep/phase-1c-readiness.md) | 10 Q&A pairs: event immutability, two-table split, duplicate ingest, JSONB rationale, cross-store provenance, HNSW vs IVFFlat, DTO pattern, extraction_runs utility, re-extraction workflow, schema weaknesses |

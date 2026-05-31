@@ -16,11 +16,14 @@ RUN uv pip install --system --no-cache \
     "neo4j>=5.26.0" \
     "sqlalchemy[asyncio]>=2.0.36" \
     "asyncpg>=0.30.0" \
-    "pgvector>=0.3.6"
+    "pgvector>=0.3.6" \
+    "alembic>=1.14.0"
 
 # Copy application source
 COPY backend/app/ ./app/
 COPY backend/migrations/ ./migrations/
+COPY backend/alembic/ ./alembic/
+COPY backend/alembic.ini ./alembic.ini
 
 EXPOSE 8000
 

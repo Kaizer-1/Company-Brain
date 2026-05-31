@@ -29,6 +29,23 @@ These queries are the schema's reason for existing and the demo's centrepiece. E
 
 ---
 
+## Postgres Schema (LOCKED IN — Phase 1C)
+
+Three tables serve as the immutable raw-event log and the provenance backbone.
+Full rationale: `docs/design/postgres-schema.md`. ADR 0009 (design), ADR 0010 (Alembic).
+
+| Table | Role |
+|-------|------|
+| `events` | Immutable raw-event log. UUID PK referenced by graph nodes' `source_event_ids`. Append-only. |
+| `event_embeddings` | One pgvector embedding per event (1536-dim). HNSW index. Separate table to allow re-embedding without mutating events. |
+| `extraction_runs` | Audit log for every extraction pipeline invocation. Enables failure detection, re-extraction workflows, model-upgrade auditing. |
+
+**Provenance contract**: graph nodes' `source_event_ids` are UUIDs in `events`. Write order enforced by the extraction pipeline (Postgres first, then Neo4j). Cross-store integrity verified by `backend/scripts/check_provenance.py` (Phase 4).
+
+**Post-Phase-1B Docker-copy baseline (non-negotiable)**: any new directory added to the backend (e.g., `backend/alembic/`, `backend/scripts/`) **must** be copied into the Docker image in the same commit. Verify with `docker compose exec backend find /app -type d`. A migration runner that silently no-ops because its files are absent is an invisible bug.
+
+---
+
 ## Graph Schema (LOCKED IN — Phase 1B)
 
 Designed backward from the 4 killer queries; closed set (no new labels/edges at runtime). Full rationale: `docs/design/graph-schema.md`. Summary: [ADR 0007](docs/decisions/0007-graph-schema-v1.md). Python models: `backend/app/schemas/graph.py`.
@@ -121,7 +138,7 @@ Synthetic data only. Entity types are closed (no new types added at runtime). No
 |---|-------|-------------|--------|
 | 1A | Foundation | Scaffolding, documentation infrastructure, session context files | **Complete** |
 | 1B | Neo4j Schema | Node labels, relationship types, constraints, Cypher migrations | **Complete** |
-| 1C | Postgres Models | SQLAlchemy models, Alembic migrations, pgvector column setup | Pending |
+| 1C | Postgres Models | SQLAlchemy models, Alembic migrations, pgvector column setup | **Complete** |
 | 2A | Synthetic Generator | Faker-based generator for Services, Persons, Decisions, Messages | Pending |
 | 2B | Message Parser | Slack-style message ingestion pipeline and normalisation | Pending |
 | 2C | Document Parser | Decision doc and meeting note parser | Pending |
