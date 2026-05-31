@@ -1,0 +1,34 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Cache dirs
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Git
+.git/
+.gitignore
+
+# Node
+node_modules/
+.next/
+
+# Environment (never bake secrets into an image)
+.env
+*.env.local
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
+
+# uv artefacts
+uv.lock

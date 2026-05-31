@@ -1,0 +1,3 @@
+# Phase 2A: Synthetic data seeder — not yet implemented.
+# This script will generate synthetic Services, Persons, Decisions, and Messages
+# and write them into Neo4j and Postgres, exercising the full write path.

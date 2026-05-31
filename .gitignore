@@ -1,0 +1,31 @@
+# Environment
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# uv
+uv.lock
+
+# Node
+node_modules/
+.next/
+
+# IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Docker volumes (never commit data dirs accidentally)
+data/
