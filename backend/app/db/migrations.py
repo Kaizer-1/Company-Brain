@@ -61,6 +61,17 @@ async def apply_migrations(driver: AsyncDriver, *, migrations_dir: Path | None =
         The names of the migrations applied by this call, in execution order.
     """
     directory = migrations_dir or MIGRATIONS_DIR
+    if not directory.exists():
+        raise RuntimeError(
+            f"Migrations directory does not exist: {directory}. "
+            "Check that backend/migrations/ is copied into the image."
+        )
+    migration_files = sorted(directory.glob("*.cypher"))
+    if not migration_files:
+        raise RuntimeError(
+            f"No .cypher migration files found in {directory}. "
+            "This is almost certainly a packaging bug — refusing to silently no-op."
+        )
     files = sorted(directory.glob("*.cypher"))
     newly_applied: list[str] = []
 

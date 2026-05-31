@@ -185,3 +185,21 @@ async def test_queries_ledger_before_applying(tmp_path: Path) -> None:
 
     first_call: Any = session.run.call_args_list[0]
     assert first_call.args[0] == _APPLIED_QUERY
+
+@pytest.mark.asyncio
+async def test_apply_migrations_raises_when_directory_missing(tmp_path):
+    """If the migrations directory doesn't exist, refuse to silently succeed."""
+    from app.db.migrations import apply_migrations
+    missing = tmp_path / "does-not-exist"
+    with pytest.raises(RuntimeError, match="Migrations directory does not exist"):
+        await apply_migrations(driver=None, migrations_dir=missing)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_apply_migrations_raises_when_directory_empty(tmp_path):
+    """An empty migrations directory is almost certainly a packaging bug."""
+    from app.db.migrations import apply_migrations
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(RuntimeError, match="No .cypher migration files found"):
+        await apply_migrations(driver=None, migrations_dir=empty)  # type: ignore[arg-type]

@@ -20,6 +20,7 @@ RUN uv pip install --system --no-cache \
 
 # Copy application source
 COPY backend/app/ ./app/
+COPY backend/migrations/ ./migrations/
 
 EXPOSE 8000
 
