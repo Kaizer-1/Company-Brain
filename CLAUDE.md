@@ -79,6 +79,25 @@ Designed backward from the 4 killer queries; closed set (no new labels/edges at 
 
 ---
 
+## Synthetic Company (LOCKED IN — Phase 2A)
+
+The eval fixture for every later phase is one hand-curated fictional company:
+**Northwind Payments**, a ~6-year-old B2B payments processor mid-migration on two fronts
+(strangling a `core-monolith`; replacing `legacy-auth` with `auth-service`). Modelled:
+13 people / 5 teams / 12 services / 5 systems / 10 decisions. The generator
+(`backend/app/synthetic/`) composes this company plus a hand-designed set of adversarial
+planted cases — name aliases, a 4-hop deprecation→ownership chain (KQ1), an
+active-decision-vs-recent-discussion contradiction (KQ2), a depth-≥4 / 10-service blast
+radius (KQ3), and a multi-month auth change timeline with a supersession (KQ4) — into raw
+**Postgres `events` rows** (the graph stays empty; extraction is Phase 2B). Generation is
+fully deterministic (one seeded RNG + a fixed `REFERENCE_NOW`) so downstream eval numbers
+reproduce. Full design: [docs/design/synthetic-company.md](docs/design/synthetic-company.md);
+strategy: [ADR 0011](docs/decisions/0011-synthetic-data-strategy.md). Run the seeder with
+`docker compose exec backend python -m app.synthetic.seeder`. **Do not change the company
+definition or the seed (`42`) without updating the design doc — it invalidates eval baselines.**
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -139,7 +158,7 @@ Synthetic data only. Entity types are closed (no new types added at runtime). No
 | 1A | Foundation | Scaffolding, documentation infrastructure, session context files | **Complete** |
 | 1B | Neo4j Schema | Node labels, relationship types, constraints, Cypher migrations | **Complete** |
 | 1C | Postgres Models | SQLAlchemy models, Alembic migrations, pgvector column setup | **Complete** |
-| 2A | Synthetic Generator | Faker-based generator for Services, Persons, Decisions, Messages | Pending |
+| 2A | Synthetic Generator | Adversarial hand-curated generator → raw Postgres events (graph stays empty) | **Complete** |
 | 2B | Message Parser | Slack-style message ingestion pipeline and normalisation | Pending |
 | 2C | Document Parser | Decision doc and meeting note parser | Pending |
 | 2D | Entity Extraction | LLM-powered entity + relationship extraction pipeline | Pending |

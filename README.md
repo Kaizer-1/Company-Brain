@@ -19,6 +19,10 @@ cp .env.example .env
 docker compose up --build
 curl localhost:8000/health
 # → {"status":"ok","neo4j":"connected","postgres":"connected"}
+
+# Seed the deterministic synthetic corpus into Postgres (idempotent; safe to re-run).
+# This lands raw `events` rows only — the graph stays empty until extraction (Phase 2B).
+docker compose exec backend python -m app.synthetic.seeder
 ```
 
 ## Development

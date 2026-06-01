@@ -24,6 +24,9 @@ COPY backend/app/ ./app/
 COPY backend/migrations/ ./migrations/
 COPY backend/alembic/ ./alembic/
 COPY backend/alembic.ini ./alembic.ini
+# Post-Phase-1B Docker-copy baseline: any backend dir must be copied into the image.
+# scripts/ holds the synthetic seeder CLI (backend/scripts/seed_synthetic.py).
+COPY backend/scripts/ ./scripts/
 
 EXPOSE 8000
 
