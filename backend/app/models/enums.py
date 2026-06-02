@@ -30,3 +30,33 @@ class ExtractionStatus(str, enum.Enum):
     success = "success"
     failed = "failed"
     partial = "partial"
+
+
+class NodeType(str, enum.Enum):
+    """The closed set of graph node types entity resolution operates over (Phase 3A).
+
+    A subset of the six graph labels: ``Message`` is never resolved (it is created
+    mechanically from an event, one-to-one, so it cannot fragment). Values must match the
+    Postgres enum type ``nodetype`` created in the Phase 3A Alembic migration.
+    """
+
+    Person = "Person"
+    Service = "Service"
+    System = "System"
+    Team = "Team"
+    Decision = "Decision"
+
+
+class MergeDecisionType(str, enum.Enum):
+    """The outcome of one resolution attempt (Phase 3A; see ADR 0015).
+
+    Every candidate pair the resolver considers produces exactly one of these, recorded in
+    ``merge_decisions``. ``auto_merge``/``llm_merge`` write a ``MERGE_INTO`` edge;
+    ``llm_no_merge``/``below_threshold`` touch only the audit table. Values must match the
+    Postgres enum type ``mergedecisiontype``.
+    """
+
+    auto_merge = "auto_merge"
+    llm_merge = "llm_merge"
+    llm_no_merge = "llm_no_merge"
+    below_threshold = "below_threshold"

@@ -189,6 +189,50 @@ Synthetic data only. Entity types are closed (no new types added at runtime). No
 
 ---
 
+## Production Verification (apply at the end of every subphase, from 3A on)
+
+Three Docker bugs hit Phases 1B, 1C, and 2B because development-environment success does not
+prove production-container success. Run this checklist against a clean Docker volume at the
+end of every subphase:
+
+1. **Dependencies sync.** If `pyproject.toml` changed, a clean image rebuild must install the
+   new packages. Verify: `docker compose exec backend python -c "import <pkg>; print(<pkg>.__version__)"`.
+2. **Directory copies.** If a new directory was added under `backend/`, the Dockerfile must
+   `COPY` it (or it sits under an already-copied parent like `backend/app/`). Verify:
+   `docker compose exec backend ls /app/<dir>`.
+3. **Environment passthrough.** If a new env var was added to settings/`.env`, the backend
+   service's `environment:` block in `docker-compose.yml` must include it. Verify:
+   `docker compose exec backend env | grep <VAR>`.
+4. **End-to-end smoke against real services.** Run the new code's entry point against the live
+   stack with a small sample. Unit tests do not prove a new process boundary works.
+
+## Entity Resolution (LOCKED IN — Phase 3A)
+
+Resolves the duplicate nodes the best-effort write path creates (`@alice`, `Alice Chen`,
+`alice.chen@northwind.io` → one Person). Full rationale:
+[docs/design/entity-resolution.md](docs/design/entity-resolution.md). ADR 0014 (tiered model),
+ADR 0015 (audit table). Module: `backend/app/resolution/`.
+
+- **Three tiers** (`resolver.py`): **Tier 1** auto-merges when a deterministic exact-identity
+  rule fires (shared email/handle, curated known-alias, equal/former canonical name) —
+  authoritative over embeddings. **Tier 2** sends the close-but-no-rule band (cosine ≥ 0.75) to
+  `claude-3.5-haiku`. **Tier 3** leaves the rest alone. Embeddings are local
+  `BAAI/bge-small-en-v1.5` (sentence-transformers), never a hosted API.
+- **`MERGE_INTO` edge model** (`merger.py`): merges are **non-destructive** —
+  `(loser)-[:MERGE_INTO {confidence, tier, created_at}]->(winner)`, `loser.status = "merged"`,
+  loser's `source_event_ids` unioned onto the winner. Queries see the resolved view with
+  `WHERE n.status <> "merged"`; dropping that clause shows the fragmented view. Reversible.
+- **`merge_decisions` audit table** (Postgres; ADR 0015): one row per resolution *attempt*
+  (auto_merge / llm_merge / llm_no_merge / below_threshold) with tier, rules matched, embedding
+  similarity, and LLM reasoning. A non-merge has no edge, so the record lives in Postgres.
+- **Eval** (`app/eval/resolution_eval.py`): ground truth is `narrative.ALIAS_GROUPS` (positives)
+  + `LOOK_ALIKE_PAIRS` (negatives), the same single-source-of-truth discipline as 2B (ADR 0013).
+  Seeds a deterministic fragmented graph, resolves it, scores precision / recall / false-merge /
+  missed-merge over node pairs. CLIs: `backend/scripts/resolve_entities.py [--node-type T]
+  [--dry-run]`, `backend/scripts/run_resolution_eval.py --output docs/eval/phase-3a-resolution-results.md`.
+- **Run modes**: post-merge batch this phase; the resolver is a standalone module built to be
+  called from the at-write-time path in Phase 4 too.
+
 ## 14-Subphase Plan
 
 | # | Phase | Description | Status |
@@ -201,10 +245,15 @@ Synthetic data only. Entity types are closed (no new types added at runtime). No
 | 2C | Document Parser | Decision doc and meeting note parser (source-type-specific normalisation) | Pending |
 | 2D | Entity Extraction | *(folded into 2B)* | **Complete** |
 | 2E | Graph Write Path | *(folded into 2B graph_writer; entity dedup deferred to 3B)* | **Complete** |
-| 3A | Multi-hop Traversal | Query engine: ownership and dependency traversal | Pending |
-| 3B | Temporal Queries | Query engine: contradiction detection across time windows | Pending |
+| 3A | Entity Resolution | Tiered resolver (rules → LLM → no-merge), MERGE_INTO edges, `merge_decisions` audit table, eval vs `ALIAS_GROUPS` | **Complete** |
+| 3B | Query Engine + Temporal | Multi-hop ownership/dependency traversal, temporal edges, contradiction detection, killer-query Cypher | Pending |
 | 3C | Blast Radius | Query engine: reachability analysis from a seed node | Pending |
 | 3D | Semantic Search | Embedding pipeline, pgvector indexing, hybrid graph-vector queries | Pending |
+
+> **Resequencing note (Phase 3A):** entity resolution was pulled forward to 3A because the
+> fragmented nodes from 2B's best-effort write path block the killer-query traversals. The
+> originally-planned 3A "multi-hop traversal" and "temporal queries" fold into **3B**. The
+> closed schema and the 4 killer queries are unchanged.
 | 4A | Agent Layer | Query router, graph-RAG fusion, answer generation with provenance | Pending |
 | 4B | Frontend | react-force-graph visualisation, demo polish, interview prep | Pending |
 

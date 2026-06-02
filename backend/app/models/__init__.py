@@ -6,9 +6,10 @@ Import order matters: Base must be imported before any model so that
 
 from app.models.base import Base, utc_now
 from app.models.embeddings import EventEmbedding
-from app.models.enums import ExtractionStatus, SourceType
+from app.models.enums import ExtractionStatus, MergeDecisionType, NodeType, SourceType
 from app.models.events import Event
 from app.models.extraction import ExtractionRun
+from app.models.resolution import MergeDecision
 
 __all__ = [
     "Base",
@@ -16,6 +17,9 @@ __all__ = [
     "EventEmbedding",
     "ExtractionRun",
     "ExtractionStatus",
+    "MergeDecision",
+    "MergeDecisionType",
+    "NodeType",
     "SourceType",
     "utc_now",
 ]

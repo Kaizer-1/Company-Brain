@@ -12,7 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.models.enums import ExtractionStatus, SourceType
+from app.models.enums import ExtractionStatus, MergeDecisionType, NodeType, SourceType
 
 
 class EventCreate(BaseModel):
@@ -94,3 +94,37 @@ class ExtractionRunDTO(BaseModel):
     extracted_node_count: int
     extracted_edge_count: int
     error_message: str | None
+
+
+class MergeDecisionCreate(BaseModel):
+    """Fields required to record one resolution attempt (Phase 3A; see ADR 0015)."""
+
+    model_config = ConfigDict(frozen=True)
+
+    source_node_id: str
+    target_node_id: str
+    node_type: NodeType
+    decision: MergeDecisionType
+    tier: int
+    embedding_similarity: float | None = None
+    rules_matched: list[str] = Field(default_factory=list)
+    llm_reasoning: str | None = None
+    llm_model: str | None = None
+
+
+class MergeDecisionDTO(BaseModel):
+    """Full representation of a persisted merge-decision row."""
+
+    model_config = ConfigDict(frozen=True)
+
+    id: uuid.UUID
+    source_node_id: str
+    target_node_id: str
+    node_type: NodeType
+    decision: MergeDecisionType
+    tier: int
+    embedding_similarity: float | None
+    rules_matched: list[str]
+    llm_reasoning: str | None
+    llm_model: str | None
+    created_at: datetime
