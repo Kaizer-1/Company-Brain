@@ -27,3 +27,6 @@ node_modules/
 
 # Docker volumes (never commit data dirs accidentally)
 data/
+
+# Eval harness on-disk extraction cache (re-creatable; never commit)
+.eval_cache/

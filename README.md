@@ -23,6 +23,15 @@ curl localhost:8000/health
 # Seed the deterministic synthetic corpus into Postgres (idempotent; safe to re-run).
 # This lands raw `events` rows only — the graph stays empty until extraction (Phase 2B).
 docker compose exec backend python -m app.synthetic.seeder
+
+# Extract the graph from those events (Phase 2B). Needs OPENROUTER_API_KEY in .env.
+# One-shot, not startup work: expensive and idempotent, so it runs on demand.
+docker compose exec backend python scripts/extract_all.py --model openai/gpt-4o-mini
+
+# Score extraction quality across three models → docs/eval/phase-2b-results.md
+uv run python backend/scripts/run_eval.py \
+  --models openai/gpt-4o-mini,anthropic/claude-3.5-haiku,google/gemini-2.5-flash-lite \
+  --output docs/eval/phase-2b-results.md
 ```
 
 ## Development

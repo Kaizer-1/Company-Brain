@@ -98,6 +98,44 @@ definition or the seed (`42`) without updating the design doc — it invalidates
 
 ---
 
+## Extraction Pipeline (Phase 2B)
+
+The graph is populated by an **LLM extraction pipeline**, run **on demand** — never at
+startup (it is expensive and idempotent; running it in the FastAPI lifespan would be
+wrong). Full rationale: [docs/design/extraction-pipeline.md](docs/design/extraction-pipeline.md).
+ADR 0012 (OpenRouter + JSON-mode + curated schema), ADR 0013 (eval ground truth from
+`narrative.py`).
+
+**Flow**: Postgres `events` → prompt builder → LLM (OpenRouter, JSON-mode) → strict
+Pydantic validation → Neo4j `MERGE` with provenance → `extraction_runs` audit row.
+
+**Extractor** — `backend/app/extraction/`: `models.py` (the LLM's flat output shape, every
+item carries a required `evidence_quote`), `prompts.py` (system prompt + curated schema +
+2 few-shot examples; `PROMPT_VERSION`), `client.py` (`OpenRouterClient`, async httpx,
+429/503 retry, logs `usage.cost`), `parser.py` (strict parse → typed `ExtractionParseError`),
+`graph_writer.py` (idempotent `MERGE`, `source_event_ids` set-union, edge confidence/
+`extracted_by`/`source_event_id`), `pipeline.py` (`ExtractionPipeline`; per-event
+`extraction_runs` lifecycle, failed-by-default, bounded-concurrency `extract_all`).
+
+**Eval harness** — `backend/app/eval/`: `ground_truth.py` (derives the gold set from
+`company.py`+`narrative.py` — no hand-labelled file), `matcher.py` (alias-tolerant
+canonicalisation; Phase 3B makes this redundant), `metrics.py` (P/R/F1, per-type),
+`failure_modes.py` (named taxonomy + worst-case examples + confidence calibration),
+`runner.py` (`run_eval`, disk-cached per-event responses), `report.py` (Markdown).
+
+**Three-model comparison** (via OpenRouter): `openai/gpt-4o-mini`,
+`anthropic/claude-3.5-haiku`, and `google/gemini-2.5-flash-lite` (substituted for the
+specced `gemini-2.0-flash`, which OpenRouter retired). Latest results — entity/relation F1:
+gpt-4o-mini 0.87/0.62, haiku 0.91/0.78, gemini-2.5-flash-lite 0.87/0.57; full run $0.42:
+[docs/eval/phase-2b-results.md](docs/eval/phase-2b-results.md).
+
+**CLIs**: `uv run python backend/scripts/extract_all.py --model <m> [--limit N]` (reads
+Postgres, writes Neo4j); `uv run python backend/scripts/run_eval.py --models <a,b,c>
+--output docs/eval/phase-2b-results.md` (builds the corpus deterministically, no DB
+needed; `--no-cache` forces fresh calls). `OPENROUTER_API_KEY` lives in `.env`.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -159,10 +197,10 @@ Synthetic data only. Entity types are closed (no new types added at runtime). No
 | 1B | Neo4j Schema | Node labels, relationship types, constraints, Cypher migrations | **Complete** |
 | 1C | Postgres Models | SQLAlchemy models, Alembic migrations, pgvector column setup | **Complete** |
 | 2A | Synthetic Generator | Adversarial hand-curated generator → raw Postgres events (graph stays empty) | **Complete** |
-| 2B | Message Parser | Slack-style message ingestion pipeline and normalisation | Pending |
-| 2C | Document Parser | Decision doc and meeting note parser | Pending |
-| 2D | Entity Extraction | LLM-powered entity + relationship extraction pipeline | Pending |
-| 2E | Graph Write Path | Upsert to Neo4j, entity deduplication, write validation | Pending |
+| 2B | Extraction + Eval | LLM extraction pipeline (events→Neo4j w/ provenance) + 3-model eval harness (P/R/F1 + failure modes). Folds the originally-separate entity-extraction (2D) and graph-write (2E) work. | **Complete** |
+| 2C | Document Parser | Decision doc and meeting note parser (source-type-specific normalisation) | Pending |
+| 2D | Entity Extraction | *(folded into 2B)* | **Complete** |
+| 2E | Graph Write Path | *(folded into 2B graph_writer; entity dedup deferred to 3B)* | **Complete** |
 | 3A | Multi-hop Traversal | Query engine: ownership and dependency traversal | Pending |
 | 3B | Temporal Queries | Query engine: contradiction detection across time windows | Pending |
 | 3C | Blast Radius | Query engine: reachability analysis from a seed node | Pending |

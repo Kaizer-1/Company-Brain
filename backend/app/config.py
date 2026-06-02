@@ -17,6 +17,11 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        # The shared .env also holds Postgres *container* credentials (POSTGRES_USER/DB,
+        # consumed by docker-compose, not by the app). Ignore env vars we don't model
+        # rather than crash on them — only matters when running locally with the .env
+        # present (inside the image those vars aren't set).
+        extra="ignore",
     )
 
     # Neo4j
@@ -30,6 +35,18 @@ class Settings(BaseSettings):
     # App
     app_name: str = "Company Brain"
     debug: bool = False
+
+    # Extraction pipeline (Phase 2B). The graph is populated by an LLM extraction
+    # pipeline that talks to many models through one API (OpenRouter); see
+    # docs/decisions/0012-extraction-via-openrouter.md. The API key is read here
+    # (never via os.environ elsewhere) and is empty by default so the rest of the
+    # stack — and the test suite — runs without it; the real-API smoke test skips
+    # when it is unset.
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    extraction_model: str = "openai/gpt-4o-mini"  # default single-run model
+    extraction_temperature: float = 0.0  # deterministic-ish: extraction is not creative writing
+    extraction_max_tokens: int = 2000
 
 
 settings = Settings()

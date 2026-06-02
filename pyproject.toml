@@ -13,6 +13,7 @@ dependencies = [
     "asyncpg>=0.30.0",
     "pgvector>=0.3.6",
     "alembic>=1.14.0",
+    "httpx>=0.28.0",  # async OpenRouter client (extraction pipeline, Phase 2B)
 ]
 
 [project.optional-dependencies]
