@@ -60,3 +60,7 @@ class MergeDecisionType(str, enum.Enum):
     llm_merge = "llm_merge"
     llm_no_merge = "llm_no_merge"
     below_threshold = "below_threshold"
+    # Phase 3B (ADR 0017): a multi-source Decision content-consolidation merge — same
+    # MERGE_INTO mechanism as the entity merges, distinguished so the audit can tell a
+    # content-similarity Decision merge from an identity-rule entity merge.
+    content_merge = "content_merge"

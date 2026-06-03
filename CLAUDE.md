@@ -74,8 +74,11 @@ Designed backward from the 4 killer queries; closed set (no new labels/edges at 
 | `AUTHORED` | Person → Message\|Decision | Authorship / provenance |
 | `MENTIONS` | Message → any entity | Grounding discussions to entities |
 | `CONTRADICTS` | Message → Decision | Temporal contradiction (KQ2) |
+| `SUPERSEDES` *(3B)* | Decision → Decision | Change-timeline supersession (KQ4) |
 
 **Identity**: Service/System/Team keyed by `canonical_name`; Person by `canonical_id`; Decision by UUID `id`; Message by `id = "source_id:external_id"`. **Provenance**: every node carries `source_event_ids` (FKs into the Postgres events log); every edge carries `confidence` + `extracted_by`. **Entity resolution is Phase 3** — the v1 write path is best-effort and may create duplicate nodes the schema is designed to later merge.
+
+**Phase 3B updates to this schema**: `SUPERSEDES` (Decision→Decision) added to the closed vocabulary (10 edge types now). Decision nodes now carry **populated** `valid_from`/`valid_to`/`status` (the temporal enricher fills them; extraction left them empty). `Message` nodes and `CONTRADICTS` edges — previously never created — are populated by the Phase-3B contradiction pass (`backend/app/contradiction/`). Resolved-view queries rely on the edge-projection cleanup (`backend/app/resolution/projection.py`) copying loser edges onto canonical winners, because 3A's merger is non-destructive and does not migrate edges.
 
 ---
 
@@ -233,6 +236,38 @@ ADR 0015 (audit table). Module: `backend/app/resolution/`.
 - **Run modes**: post-merge batch this phase; the resolver is a standalone module built to be
   called from the at-write-time path in Phase 4 too.
 
+## Query Engine (LOCKED IN — Phase 3B)
+
+The four killer queries are implemented as typed Cypher over the resolved, temporally-enriched
+graph. Full rationale: [docs/design/query-engine.md](docs/design/query-engine.md). ADR 0016
+(temporal model + `as_of` + `SUPERSEDES`), 0017 (Decision consolidation), 0018 (provenance shape),
+0019 (contradiction/Message population). Modules: `backend/app/queries/`, `backend/app/temporal/`,
+`backend/app/contradiction/`, `backend/app/resolution/{consolidator,projection}.py`.
+
+- **The four KQs as endpoints** (FastAPI, `backend/app/api/queries.py`, registered in `main.py`):
+  `GET /api/queries/multihop-ownership?decision_id=D-0006` (KQ1),
+  `GET /api/queries/contradictions?window_days=30` (KQ2),
+  `GET /api/queries/blast-radius?service=payments-api&max_depth=5` (KQ3),
+  `GET /api/queries/change-tracking?target=auth-service&window_days=90` (KQ4). 404 if the seed
+  entity is absent. Each returns a `QueryResult` JSON.
+- **`as_of` convention**: every temporal query takes `as_of: datetime | None = None` defaulting to
+  `synthetic.REFERENCE_NOW` for dev/eval; production passes wall-clock now. Windows = `as_of - window`.
+- **`QueryResult[T]` shape** (`backend/app/queries/result_types.py`): `value: T` +
+  `provenance: QueryProvenance` (`by_element: dict[str, list[event_uuid]]` + `all_event_ids`).
+  Provenance is structural, not optional — every KQ populates it from edge `source_event_id` / node
+  `source_event_ids`.
+- **Resolved-view discipline**: every KQ filters `WHERE n.status <> 'merged'`; no KQ traverses
+  `MERGE_INTO`. Loser edges are made reachable by the projection cleanup, run after resolution +
+  consolidation.
+- **Pipeline order** (also the integration eval order): seed → extract → resolve entities →
+  consolidate decisions → project edges → **enrich temporal → ingest messages + detect
+  contradictions** → query. (Temporal enrichment precedes contradiction detection so the detector
+  filters on normalised decision statuses, not raw extraction output.)
+- **Integration eval** lives at `backend/app/eval/query_eval.py` (run via
+  `backend/scripts/run_query_eval.py --output docs/eval/phase-3b-query-results.md`); it runs the full
+  pipeline and scores all four KQs against expected answers hand-derived from `narrative.py`, using
+  `claude-3.5-haiku` for reliability. Demo CLI: `backend/scripts/run_killer_queries.py`.
+
 ## 14-Subphase Plan
 
 | # | Phase | Description | Status |
@@ -246,7 +281,7 @@ ADR 0015 (audit table). Module: `backend/app/resolution/`.
 | 2D | Entity Extraction | *(folded into 2B)* | **Complete** |
 | 2E | Graph Write Path | *(folded into 2B graph_writer; entity dedup deferred to 3B)* | **Complete** |
 | 3A | Entity Resolution | Tiered resolver (rules → LLM → no-merge), MERGE_INTO edges, `merge_decisions` audit table, eval vs `ALIAS_GROUPS` | **Complete** |
-| 3B | Query Engine + Temporal | Multi-hop ownership/dependency traversal, temporal edges, contradiction detection, killer-query Cypher | Pending |
+| 3B | Query Engine + Temporal | Multi-hop ownership/dependency traversal, temporal edges, contradiction detection, killer-query Cypher | **Complete** |
 | 3C | Blast Radius | Query engine: reachability analysis from a seed node | Pending |
 | 3D | Semantic Search | Embedding pipeline, pgvector indexing, hybrid graph-vector queries | Pending |
 

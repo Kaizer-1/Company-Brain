@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.api.health import router as health_router
+from app.api.queries import router as queries_router
 from app.config import settings
 from app.db.migrations import apply_migrations
 from app.db.neo4j_client import Neo4jClient
@@ -117,3 +118,4 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(RequestIDMiddleware)
 app.include_router(health_router)
+app.include_router(queries_router)

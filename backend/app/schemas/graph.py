@@ -188,6 +188,10 @@ class RelationshipType(StrEnum):
     AUTHORED = "AUTHORED"
     MENTIONS = "MENTIONS"
     CONTRADICTS = "CONTRADICTS"
+    # Phase 3B (ADR 0016): Decision -> Decision. A superseding decision links to the one
+    # it replaces; the temporal enricher uses this to set the older decision's
+    # status='superseded' and valid_to. Resolves graph-schema.md open question #5.
+    SUPERSEDES = "SUPERSEDES"
 
 
 class Relationship(BaseModel):

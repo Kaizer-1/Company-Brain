@@ -91,6 +91,19 @@ class EventRepository(Repository[Event]):
         await self._session.flush()
         return _to_dto(row)
 
+    async def list_by_source_type(self, source_type: SourceType) -> list[EventDTO]:
+        """Return all events of a given source type, ordered by send time ascending.
+
+        Used by the Phase-3B contradiction pass to ingest Slack-style events as Message
+        nodes (the graph schema's Message atoms are created mechanically from events).
+        """
+        result = await self._session.execute(
+            select(Event)
+            .where(Event.source_type == source_type)
+            .order_by(Event.created_at.asc())
+        )
+        return [_to_dto(row) for row in result.scalars().all()]
+
     async def list_since(self, since: datetime) -> list[EventDTO]:
         """Return all events with ``created_at >= since``, ordered ascending.
 

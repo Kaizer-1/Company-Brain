@@ -27,7 +27,15 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger(__name__)
 
-_MERGE_DECISIONS = frozenset({MergeDecisionType.auto_merge, MergeDecisionType.llm_merge})
+_MERGE_DECISIONS = frozenset(
+    {
+        MergeDecisionType.auto_merge,
+        MergeDecisionType.llm_merge,
+        # Phase 3B (ADR 0017): multi-source Decision content-consolidation also writes a
+        # MERGE_INTO edge, via the same non-destructive mechanism as entity merges.
+        MergeDecisionType.content_merge,
+    }
+)
 
 
 def pick_winner(a: ResolvableNode, b: ResolvableNode) -> tuple[ResolvableNode, ResolvableNode]:

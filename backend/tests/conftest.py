@@ -132,6 +132,47 @@ async def db_session(pg_test_dsn: str, run_migrations: None) -> AsyncIterator[As
         await engine.dispose()
 
 
+# ---------------------------------------------------------------------------
+# Neo4j testcontainer fixtures (shared by queries/temporal/contradiction tests)
+# ---------------------------------------------------------------------------
+try:
+    from testcontainers.neo4j import Neo4jContainer  # type: ignore[import-untyped]
+
+    _NEO4J_AVAILABLE = True
+except Exception:  # pragma: no cover - import guard
+    _NEO4J_AVAILABLE = False
+
+_NEO4J_IMAGE = "neo4j:5.26-community"
+
+
+@pytest.fixture(scope="session")
+def shared_neo4j_container() -> Iterator[object]:
+    """Start one Neo4j container for the whole (non-resolution) test session."""
+    if not _NEO4J_AVAILABLE:
+        pytest.skip("testcontainers/Docker not available — skipping Neo4j tests")
+    with Neo4jContainer(_NEO4J_IMAGE) as container:
+        yield container
+
+
+@pytest_asyncio.fixture()
+async def neo4j_driver(shared_neo4j_container: object) -> AsyncIterator[object]:
+    """Yield a connected AsyncDriver with migrations applied and a clean graph."""
+    from neo4j import AsyncGraphDatabase
+
+    from app.db.migrations import apply_migrations
+
+    url = shared_neo4j_container.get_connection_url()  # type: ignore[attr-defined]
+    password = shared_neo4j_container.password  # type: ignore[attr-defined]
+    driver = AsyncGraphDatabase.driver(url, auth=("neo4j", password))
+    await apply_migrations(driver)
+    async with driver.session() as s:
+        await (await s.run("MATCH (n) WHERE NOT n:_Migration DETACH DELETE n")).consume()
+    try:
+        yield driver
+    finally:
+        await driver.close()
+
+
 @pytest.fixture
 def healthy_state() -> Generator[None, None, None]:
     """Inject mocks reporting both Neo4j and Postgres as connected."""

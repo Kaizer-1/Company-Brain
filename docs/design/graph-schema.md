@@ -130,6 +130,7 @@ Nine relationship types. UPPERCASE, verb-ish, directed. Every edge carries the *
 | `AUTHORED` | `Person` → `Message \| Decision` | — | 1:N | KQ2, KQ4 |
 | `MENTIONS` | `Message` → `Service \| System \| Person \| Team \| Decision` | — | N:M | KQ2 (grounding) |
 | `CONTRADICTS` | `Message` → `Decision` | — | N:M | KQ2 |
+| `SUPERSEDES` *(3B)* | `Decision` → `Decision` | — | N:M | KQ4 |
 
 Notes on the trickier choices:
 
@@ -318,8 +319,8 @@ Naming non-decisions is as important as naming decisions. The following were con
 
 Decisions that genuinely cannot be made without writing the extraction prompts first:
 
-1. **How is `CONTRADICTS` populated?** By the extraction LLM inline (Phase 2D), or by a dedicated contradiction-detection pass over (message, decision) pairs (Phase 3B)? The *schema slot* exists; the *population mechanism* is deferred. This affects whether `CONTRADICTS` needs a `detection_method` property.
+1. ~~**How is `CONTRADICTS` populated?**~~ **Resolved in Phase 3B (ADR 0019):** by a dedicated contradiction-detection pass (`backend/app/contradiction/`) run after extraction/resolution — not the inline extractor. It also creates the `Message` nodes (mechanically, one per Slack event), which nothing produced before. The edge carries `confidence`/`extracted_by`/`source_event_id` like any extracted edge; no `detection_method` property was needed.
 2. **`DEPENDS_ON` target discipline.** Should a service ever depend on a `Person`/`Team` (an organisational dependency), or strictly on `Service`/`System`? Held to structural targets for now; revisit if extraction surfaces org dependencies.
 3. **Confidence calibration.** What threshold separates a kept edge from a dropped one? Cannot be set until we see real extractor confidence distributions (Phase 2D).
 4. **Multi-valued ownership.** `OWNED_BY` is modelled N:1 in the common case but allowed N:M. Do we need a `primary: bool` property to disambiguate the owner-of-record? Deferred until the generator (Phase 2A) shows how often co-ownership occurs.
-5. **`Decision` supersession chain.** Should a superseding decision link to the one it replaces via a `SUPERSEDES` edge? Not needed by any killer query today, but KQ4's change timeline would read more naturally with it. Held until KQ4's agent rendering is built (Phase 4A).
+5. **`Decision` supersession chain.** ~~Should a superseding decision link to the one it replaces via a `SUPERSEDES` edge?~~ **Resolved in Phase 3B (ADR 0016):** `SUPERSEDES` (`Decision -> Decision`) is now part of the closed vocabulary. KQ4's change timeline renders the supersession, and the temporal enricher uses the edge to set the superseded decision's `status='superseded'` and `valid_to`. The edge is derived (not extracted) from the decision body's "supersedes D-####" signal — see `backend/app/temporal/supersession.py`.

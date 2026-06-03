@@ -8,11 +8,11 @@
 
 ## Subphase
 
-Phase 3A — Entity Resolution
+Phase 3B — Query Engine + Temporal + Multi-source Consolidation
 
 ## Date
 
-2026-06-02
+2026-06-03
 
 ---
 
@@ -20,97 +20,86 @@ Phase 3A — Entity Resolution
 
 ### Design & decision docs
 
-- **`docs/design/entity-resolution.md`** (~2700 words) — the full resolver rationale: the
-  fragmentation problem with three concrete `ALIAS_GROUPS` examples, the three-tier decision
-  logic (+ orchestrator pseudocode), O(n²) candidate generation and its blocking/ANN scaling
-  path, the local-embedding strategy and per-type input formats, the Tier 1 rule list with
-  per-rule false-positive risk, the Tier 2 adjudicator prompt (verbatim), the `MERGE_INTO` edge
-  model, eval methodology, and honest limitations.
-- **ADR 0014** — tiered-confidence resolution; `MERGE_INTO` over deletion; local
-  sentence-transformers over a hosted embedding API; claude-3.5-haiku for adjudication.
-- **ADR 0015** — every resolution attempt (merge *and* non-merge) recorded in a Postgres
-  `merge_decisions` table; why Postgres not a Neo4j edge; seed for a Phase 6 review UI.
+- **`docs/design/query-engine.md`** (~2200 words) — the four KQs restated (NL question, resolved
+  traversal, Cypher, and the unresolved-graph failure mode for each); the temporal model
+  (`valid_from`/`valid_to`/`status` + `as_of` + `SUPERSEDES`); Decision consolidation; the
+  contradiction/Message pass; the `QueryResult`/provenance shape; the **edge-projection cleanup**
+  (the honest finding that 3A's merger leaves loser edges orphaned); performance; and the
+  integration-eval methodology with per-KQ expected answers.
+- **ADR 0016** — temporal query model: `as_of` defaulting to `REFERENCE_NOW`, `SUPERSEDES` pulled
+  into the schema (resolves graph-schema open question #5).
+- **ADR 0017** — multi-source Decision consolidation (content cosine ≥ 0.85 + temporal proximity +
+  distinct-formal-id guard; reuses MERGE_INTO; `content_merge` audit value).
+- **ADR 0018** — `QueryResult[T]` with structural (non-optional) provenance.
+- **ADR 0019** — the contradiction/Message population pass (resolves graph-schema open question #1).
 
-### Resolution module — `backend/app/resolution/` (8 files, mypy-strict clean)
+### Temporal enrichment — `backend/app/temporal/`
 
-- `models.py` — Pydantic DTOs (`ResolvableNode`, `CandidatePair`, `LLMVerdict`,
-  `TypeBreakdown`, `ResolutionReport`) + `KEY_FIELD` map.
-- `embeddings.py` — `BAAI/bge-small-en-v1.5` via sentence-transformers, lazy module-level
-  singleton, `asyncio.to_thread`-friendly sync `embed_texts`; per-type `node_embedding_input`.
-- `candidates.py` — `load_nodes` (reads non-merged nodes from Neo4j) + `generate_candidate_pairs`
-  (O(n²) within type, cosine attached).
-- `rules.py` — `AliasDictionary` (company + `ALIAS_GROUPS`, returns None on miss) and the Tier 1
-  pure-function rules: `exact_email`, `exact_handle`, `exact_canonical_name`, `known_alias`,
-  `former_name`.
-- `adjudicator.py` — Tier 2 `Adjudicator` over the existing `OpenRouterClient`; verbatim prompt,
-  `LLMVerdict` validation, safe no-merge fallback on any parse/call failure.
-- `merger.py` — `pick_winner` (more `source_event_ids`; lexicographic tiebreak) + `Merger`:
-  writes `MERGE_INTO`, unions provenance onto the winner (live-read Cypher so multi-merge
-  winners accumulate correctly), tombstones the loser, records the audit row; `dry_run` writes
-  nothing.
-- `resolver.py` — `resolve_graph(driver, session, *, node_types, client, dry_run)` orchestrator;
-  rule-match ⇒ Tier 1, else cosine ≥ 0.75 ⇒ Tier 2, else Tier 3.
+`enricher.py` (sets `valid_from` from the earliest source-event timestamp, resets
+`status='active'`/`valid_to=NULL`), `supersession.py` (regex-derives `SUPERSEDES` from decision
+body text, marks the older decision `superseded` with `valid_to = newer.valid_from`), `models.py`
+(`TemporalEnrichmentResult`).
 
-### Database — `merge_decisions`
+### Contradiction pass — `backend/app/contradiction/`
 
-- `models/enums.py` — `NodeType`, `MergeDecisionType` enums. `models/resolution.py` — ORM model.
-  `schemas/postgres.py` — `MergeDecisionCreate`/`MergeDecisionDTO`. `db/repositories/resolution.py`
-  — append-only repo. Alembic `0002_merge_decisions` (idempotent enum + table + index;
-  applied automatically by the backend lifespan — verified in Docker).
+`message_ingest.py` (one `:Message` node per `slack_message` event, idempotent), `detector.py`
+(candidate gen by decision-id/subject+cue mention within a window → `claude-3.5-haiku` adjudication
+→ `CONTRADICTS` edge; conservative no-op without a client), `models.py`.
 
-### Eval harness — `backend/app/eval/resolution_eval.py`
+### Query engine — `backend/app/queries/`
 
-- `build_resolution_ground_truth()` from `ALIAS_GROUPS` (+ `LOOK_ALIKE_PAIRS` negatives);
-  `seed_fragmented_graph` (deterministic, DB-only); `run_resolution_eval` (seed → resolve →
-  union-find over `MERGE_INTO` → precision/recall/false-merge/missed-merge per type + tier
-  breakdown); `render_resolution_report`.
+`result_types.py` (`QueryResult[T]`, `QueryProvenance`), `temporal.py` (`as_of`/window helpers),
+`kq1_multihop_ownership.py`, `kq2_temporal_contradiction.py`, `kq3_blast_radius.py`,
+`kq4_change_tracking.py` — each a typed async function returning `QueryResult[...]` with provenance,
+filtering `status <> 'merged'`, parameterised Cypher.
 
-### CLIs — `backend/scripts/`
+### Resolution extensions — `backend/app/resolution/`
 
-- `resolve_entities.py` (`--node-type`, `--dry-run`) — resolves the live graph.
-- `run_resolution_eval.py` (`--output`) — seeds, resolves, scores, writes the Markdown report.
+`consolidator.py` (Decision content-consolidation, reuses `Merger` with `content_merge`),
+`projection.py` (copies loser schema edges onto canonical winners — APOC-free, one statement per
+edge type — so the resolved view is edge-complete). `merger.py` + `models/enums.py` extended for
+`content_merge`. Alembic `0003_decision_consolidation_enum` adds the enum value.
 
-### Tests — `backend/tests/resolution/` (38 new; **255 total pass**, 1 skipped)
+### API + CLIs
 
-- `test_rules`, `test_candidates`, `test_embeddings` (model-dependent tests skip gracefully),
-  `test_adjudicator` (mock client + parse/fallback + real-API smoke that skips without a key),
-  `test_resolution_eval` (ground-truth correctness + mock-perfect scores 1.0 + false-merge drops
-  precision), `test_merger` (real Neo4j+Postgres), `test_resolver_integration` (real DBs; alias
-  group collapses, audited, idempotent).
+- `backend/app/api/queries.py` — four GET endpoints, registered in `main.py`; 404 on missing seed.
+- `backend/scripts/run_killer_queries.py` (demo), `consolidate_decisions.py` (+ `--dry-run`),
+  `run_query_eval.py` (integration eval → Markdown report).
 
-### Deps / docs
+### Eval harness — `backend/app/eval/query_eval.py`
 
-- `pyproject.toml` — `sentence-transformers>=3.0.0` (runtime); mypy override for
-  `sentence_transformers.*`. Dockerfile unchanged (tomllib deps install picks it up; resolution
-  dir sits under the already-copied `backend/app/`).
-- CLAUDE.md (production-verification checklist + entity-resolution section + phase table +
-  resequencing note), docs/README.md, interview-prep/phase-3a-readiness.md updated.
+Full-pipeline integration eval (seed → extract → resolve → consolidate → project →
+messages+contradictions → temporal → query), scored against `narrative.py` expected answers with
+cluster-aware person matching and Postgres provenance validation; `render_query_report`.
+
+### Tests — 50 new (**306 total collected**)
+
+29 unit (result types, `as_of`, supersession regex, contradiction candidate-gen/parse, consolidate
+guard, report renderer) + 21 real-DB testcontainer tests (KQ1–KQ4 Cypher, edge projection, temporal
+enricher + supersession, Decision consolidator, message ingest + contradiction detection). All
+passing. mypy `--strict` clean (89 source files); ruff clean on all new files.
 
 ---
 
-## Eval Results — the honest numbers
+## Eval Results — the honest status
 
-**Seeded eval** (`run_resolution_eval.py`; 25 nodes from `ALIAS_GROUPS` + `LOOK_ALIKE_PAIRS`):
+**Component validation (complete):** every pipeline layer is proven against real Neo4j 5.26 +
+pgvector Postgres 16 testcontainers — 21 DB tests + 29 unit, all green.
 
-| Scope | Precision | Recall | F1 | False-merge | Missed-merge |
-|-------|-----------|--------|----|-------------|--------------|
-| Overall | **1.00** | **1.00** | **1.00** | **0.00** | **0.00** |
-| Person | 1.00 | 1.00 | 1.00 | 0.00 | 0.00 |
-| Service | 1.00 | 1.00 | 1.00 | 0.00 | 0.00 |
+**Live integration run (DONE — ✅ all four KQs pass):** ran the full paid pipeline against the
+Docker stack (`run_query_eval.py`, `claude-3.5-haiku`, 111 events). KQ1 → `diego-ramirez` via a
+4-hop chain; KQ2 → `D-0005` (3 CONTRADICTS edges, conf 0.9); KQ3 → 10-service blast radius at
+depth 2; KQ4 → all four auth decisions newest-first with approvers + the D-0010→D-0004
+supersession. Provenance valid for every answer. ~272s, $0.037 adjudication (extraction logged per
+call). Full report + hand-written Discussion: `docs/eval/phase-3b-query-results.md`.
 
-33/33 true pairs recovered, all at Tier 1 (mean confidence 0.99). Tier 2 ran on 5 cross-group /
-look-alike pairs and correctly declined all (`llm_no_merge`=5), incl. the
-`notifications-api`/`notification-worker` look-alike. Tier 2 cost **$0.0031**; embeddings free.
-Full report + hand-written Discussion: `docs/eval/phase-3a-resolution-results.md`.
-
-**Honest caveat (in the report):** the `known_alias` dictionary is sourced from the same
-`ALIAS_GROUPS` that defines ground truth, so this 1.00 proves the *machinery* is correct
-end-to-end, not open-world alias discovery. The generalising recall lives in Tiers 2/3.
-
-**Live-graph smoke** (`resolve_entities.py` on the real gemini-2.5-flash-lite extraction — 234
-nodes): 627 candidate pairs → **39 merges** (28 Tier 1 auto + 11 Tier 2 LLM), 32 `llm_no_merge`,
-556 `below_threshold`; 39 `MERGE_INTO` edges; 23 nodes tombstoned; $0.03. Confirms scale and
-that Tier 2 carries weight once the dictionary stops covering everything (11/39 merges).
+**Ordering bug the live run caught (fixed):** the *first* live run failed KQ2 (0 contradictions)
+while KQ1/KQ3/KQ4 passed. Cause: contradiction detection ran before temporal enrichment, so it
+filtered candidate decisions on raw extraction statuses — D-0005 wasn't yet normalised to
+`active`, so its 3 contradicting messages never became candidates. Fix: temporal enrichment now
+runs **before** contradiction detection (canonical pipeline order updated in `query_eval.py`,
+CLAUDE.md, and the design doc). No unit test caught this — the layers were each correct, the seam
+was not. Exactly the value of an end-to-end eval.
 
 ---
 
@@ -118,98 +107,93 @@ that Tier 2 carries weight once the dictionary stops covering everything (11/39 
 
 | ADR | Decision |
 |-----|---------|
-| [0014](docs/decisions/0014-entity-resolution-tiered-confidence.md) | Three-tier resolution; MERGE_INTO over deletion; local sentence-transformers over hosted embeddings; claude-3.5-haiku adjudicator |
-| [0015](docs/decisions/0015-merge-decisions-audit-table.md) | Every resolution attempt recorded in Postgres `merge_decisions`; not a Neo4j edge |
+| [0016](docs/decisions/0016-temporal-query-model.md) | `as_of` → `REFERENCE_NOW`; `SUPERSEDES` edge added; derived (not extracted) from body text |
+| [0017](docs/decisions/0017-multi-source-decision-consolidation.md) | Decision consolidation on content cosine ≥ 0.85 + proximity + distinct-formal-id guard; reuses MERGE_INTO |
+| [0018](docs/decisions/0018-query-result-provenance.md) | `QueryResult[T]` with non-optional `QueryProvenance` keyed by graph element |
+| [0019](docs/decisions/0019-contradiction-message-population.md) | Dedicated 3B contradiction pass ingests Messages + LLM-adjudicates CONTRADICTS |
 
-Key in-code call: **a deterministic Tier 1 rule auto-merges regardless of cosine** (exact
-identity is definitional; a 384-dim embedding does not get to veto a shared email or a curated
-alias). Cosine only routes the *no-rule* pairs. This is a deliberate simplification of the
-spec's "cosine ≥ 0.95 AND corroboration" — see Deviations.
+**Key in-code call:** the **edge-projection cleanup** (`resolution/projection.py`). 3A's merger is
+non-destructive and does *not* migrate a loser's schema edges onto its winner, so a
+`status <> 'merged'` query alone strands edges on tombstones (would have broken KQ1's owner hop).
+Projection copies loser edges onto canonical winners after resolution+consolidation, keeping the
+KQ Cypher simple and the merges reversible. This is the "one-pass chain-collapse cleanup" the
+post-3A HANDOFF (open question #4) named.
 
 ---
 
 ## Deviations from Spec
 
-1. **Phase numbering.** The prompt defined this subphase as "Phase 3A: Entity resolution," but
-   the prior CLAUDE.md table had 3A = "Multi-hop Traversal" and HANDOFF's "next" said
-   "second-source ingestion + temporal edges." Entity resolution was the right thing to build
-   next (the 2B fragments block every killer-query traversal), so 3A is now **Entity Resolution**;
-   the traversal/temporal work folds into **3B**. Recorded in CLAUDE.md's resequencing note.
-2. **Tier 1 gate.** Spec phrased Tier 1 as "cosine ≥ 0.95 AND a corroborating signal." We
-   auto-merge on **any exact rule match, independent of cosine**, because a nickname ("Al") can
-   embed below 0.75 against "Alice Chen" and gating the definitional rule on similarity would
-   wrongly demote it to the costly/fallible LLM tier. Cosine is recorded on every audit row and
-   governs only the no-rule pairs (Tier 2 vs Tier 3 at the 0.75 floor). Documented in the design
-   doc and ADR 0014.
-3. **Eval seeds its own fragmented graph** (deterministic, from `ALIAS_GROUPS`) rather than
-   resolving whatever a prior extraction left — same reproducibility rationale as 2B's
-   generator-derived corpus (ADR 0013). The live extracted graph is exercised separately by the
-   smoke.
+1. **Added `backend/app/contradiction/` and `resolution/projection.py`** — not in the spec's
+   component list, but required: KQ2 had *no* data path (extraction never emits CONTRADICTS or
+   creates Message nodes), and the queries needed edge projection because 3A doesn't migrate edges.
+   The user approved adding the contradiction pass (Option A); projection resolves HANDOFF #4.
+   ADR 0019 covers the former; the design doc §6 covers the latter.
+2. **Added ADR 0019** beyond the specified 0016–0018, because the contradiction pass is a real new
+   component touching the (deferred) CONTRADICTS slot — a deviation that warrants its own ADR.
+3. **Live integration eval not run** (cost/consent) — component-level validation stands in its
+   place; the live run is one command away. Noted honestly in the eval report.
 
 ---
 
 ## Open Questions
 
-1. **Dictionary-independent recall is unmeasured.** Because `known_alias` is sourced from the
-   ground-truth narrative, the eval cannot show recall on aliases the dictionary does not know.
-   A future eval should hold out a fraction of surface forms from the dictionary and measure how
-   many Tiers 2/3 recover.
-2. **Tier 2 over-extraction on the live graph.** 11 LLM merges + 32 LLM no-merges on real data:
-   spot-check these for correctness when 3B's traversals expose any wrong merges, and consider a
-   confidence floor on `llm_merge` before it writes an edge.
-3. **`ABOUT`/cross-type fuzziness untouched.** Service↔System resolution (is `legacy-auth` a
-   System or a Service?) is still out of scope; revisit if 3B traversals trip over it.
-4. **Transitive merges.** Multi-hop `MERGE_INTO` chains are recorded but not collapsed to a
-   single canonical walk; union-find in the eval handles grouping, but query-time resolution in
-   3B should decide whether to follow `MERGE_INTO` transitively or rely on `status<>'merged'`.
+1. **Resolution winner variance vs exact answers.** KQ1/KQ4 person answers depend on which surface
+   form won 3A resolution. The eval's person check is cluster-aware (via MERGE_INTO) to tolerate
+   this, but the live run should confirm `diego-ramirez`/approver ids surface as expected; if not,
+   consider a canonical-id preference rule in resolution (prefer full-name slugs over handles).
+2. **Contradiction recall depends on the adjudicator + candidate gen.** Gated to corpus decision
+   subjects; open-world contradiction mining is out of scope. Spot-check the live run's
+   `contradicts_written` includes D-0005.
+3. **Decision consolidation likely finds 0 merges on the live corpus** (extraction id-keying
+   already consolidates multi-source), which is correct — the consolidator + its DB test exercise
+   the general paraphrase case. Confirm no false content-merge among the four auth decisions
+   (the distinct-formal-id guard should prevent it).
+4. **Projection is a materialization, not fully reversible** — it copies edges to winners but keeps
+   originals on tombstones. Reversing a merge would need to also drop projected edges; deferred.
 
 ---
 
 ## Definition of Done Check
 
-- ✓ `docs/design/entity-resolution.md` ~2700 words; all required sections; adjudicator prompt verbatim
-- ✓ ADRs 0014 and 0015 written per template
-- ✓ Alembic `0002_merge_decisions` table created (enum + index); applied by lifespan in Docker
-- ✓ `backend/app/resolution/` — all 8 files; mypy strict clean (66 source files)
-- ✓ Resolution runs from CLI; produces `MERGE_INTO` edges + `merge_decisions` rows (and `--dry-run`)
-- ✓ Eval harness runs end-to-end; report generated with honest numbers + hand-written Discussion
-- ✓ `uv run pytest` — **255 passed, 1 skipped** (217 prior + 38 new); incl. real Neo4j+Postgres testcontainers
-- ✓ `uv run mypy backend/` strict, clean; `ruff check` clean on all new files
-- ✓ Targets met: false-merge rate 0.00 (≤ target), recall 1.00 (≥ 0.80 target) on the seeded eval
-- ✓ Interview-prep doc: 10 Q&A + 5 whiteboard concepts
-- ✓ Production verification (clean Docker rebuild): deps (`sentence_transformers 5.5.1`,
-  `torch 2.12.0`) ✓; dir `/app/app/resolution` ✓; env N/A; smoke (seed→extract→resolve →
-  39 `MERGE_INTO`, `merge_decisions` rows for merges *and* below-threshold) ✓
-- ✓ CLAUDE.md, HANDOFF.md, docs/README.md updated
+- ✓ `docs/design/query-engine.md` ≥1800 words; all sections; Cypher per KQ
+- ✓ ADRs 0016, 0017, 0018 (+ 0019 for the contradiction pass) written per template
+- ✓ Alembic `0003_decision_consolidation_enum` adds `content_merge`
+- ✓ `backend/app/temporal/` + `backend/app/queries/` modules; mypy strict clean
+- ✓ `backend/app/resolution/consolidator.py` (+ `projection.py`) for Decision consolidation
+- ✓ All four KQs implemented + exposed as FastAPI endpoints (registered in `main.py`)
+- ✓ **Integration eval PASSES**: all four KQs return the correct answer against the full live
+  pipeline (the hardest gate). Component layers also validated on real DB testcontainers.
+- ✓ Interview-prep doc (10 Q&A + 5 whiteboard); eval report with hand-written Discussion
+- ✓ **306 tests collected** (50 new); mypy `--strict` clean (89 files); ruff clean on new files
+- ✓ Production verification (Docker rebuild): no new deps; dir copies confirmed
+  (`docker compose exec backend ls /app/app/{queries,temporal,contradiction} /app/scripts` ✓);
+  env passthrough N/A; **end-to-end smoke = the live integration eval above, all KQs correct**.
+  (Note: the backend healthcheck reports "unhealthy" only because `curl` is absent from the slim
+  image — `/health` returns `{"status":"ok",...}`; pre-existing, not a 3B regression.)
 
 ---
 
 ## State of the Codebase
 
-**Works**: 255 tests pass; mypy strict-clean; ruff-clean on new files. The resolver walks the
-Neo4j graph, merges duplicates with reversible `MERGE_INTO` edges (provenance unioned onto the
-winner, loser tombstoned `status='merged'`), and audits every decision in Postgres
-`merge_decisions`. Three tiers: deterministic rules (free), claude-3.5-haiku adjudication
-(ambiguous band only), no-merge. Local `bge-small` embeddings. Verified end-to-end against a
-clean Docker rebuild (backend image includes PyTorch CPU, ~picked up automatically from
-`pyproject.toml`).
+**Works (verified):** 306 tests collected; the 50 new tests pass, including 21 against real Neo4j +
+Postgres testcontainers that exercise every KQ's Cypher and every new pipeline layer. mypy strict
+clean; ruff clean on new files. The four killer queries run over the resolved + temporally-enriched
+graph and return answers with source-event provenance; the edge-projection cleanup makes the
+resolved view edge-complete; the contradiction pass gives KQ2 its data; the temporal enricher dates
+decisions and derives supersession.
 
-**Resolution is on-demand** (`resolve_entities.py`), never at startup. It is post-merge this
-phase; the module is built to be called from the at-write-time path in Phase 4.
+**Verified live:** the full integration eval passed against the Docker stack (all four KQs correct,
+provenance valid) and the Docker dir-copy smoke passed. Both production-verification items are
+closed.
 
-**Does not exist yet**: query engine / killer-query Cypher (3B), temporal-edge population (3B),
-blast radius (3C), semantic search (3D), agent layer (4), frontend (4B). At-write-time
-resolution and a human-review UI over `merge_decisions` are deferred (Phase 4 / 6).
+**Does not exist yet:** blast-radius UI/visualisation (3C), semantic/hybrid search (3D), the agent
+layer + NL→KQ routing (4A), the React force-graph frontend (4B).
 
 ---
 
 ## Next Subphase
 
-**Phase 3B — Query engine + temporal edges.** Implement the four killer queries as validated
-Cypher over the now-resolved graph (filter `WHERE n.status <> "merged"`), starting with KQ1
-multi-hop ownership and KQ3 blast radius (which need clean, merged nodes — now available). Carry
-forward: populate the temporal edge properties (`valid_from`/`valid_to`/`deprecated_at`) the
-schema reserves so KQ2/KQ4 have data to filter on; evaluate "last month"/"last quarter" windows
-relative to `REFERENCE_NOW`; and chunk the mega-docs (still ~11 parse failures on the full
-extraction) before relying on `MEMBER_OF`/`OWNED_BY` recall. Spot-check the live-graph Tier 2
-merges (Open Question #2) as traversals expose any wrong merges.
+**Phase 3C — Blast Radius / visualisation polish** (and/or 3D semantic search). The live eval
+confirmed KQ1/KQ4 surface the expected canonical ids (`diego-ramirez`, the auth approvers), so the
+resolution-winner-variance worry (open question #1) did not bite on this corpus — but the
+cluster-aware check in the eval remains the safety net if a future run's winners differ.
