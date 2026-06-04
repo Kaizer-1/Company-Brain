@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.models.enums import NodeType
+    from app.models.enums import MergeDecisionType, NodeType
 
 
 def _to_dto(row: MergeDecision) -> MergeDecisionDTO:
@@ -68,6 +68,28 @@ class MergeDecisionRepository(Repository[MergeDecision]):
             .where(MergeDecision.node_type == node_type)
             .order_by(MergeDecision.created_at.desc())
         )
+        return [_to_dto(r) for r in result.scalars().all()]
+
+    async def list_all_filtered(
+        self,
+        *,
+        tier: int | None = None,
+        decision: "MergeDecisionType | None" = None,
+        node_type: "NodeType | None" = None,
+    ) -> list[MergeDecisionDTO]:
+        """All decisions matching the optional filters, newest first.
+
+        Used by the audit API endpoint (Phase 3C) so the frontend can filter
+        by tier, decision type, and node type independently.
+        """
+        stmt = select(MergeDecision).order_by(MergeDecision.created_at.desc())
+        if tier is not None:
+            stmt = stmt.where(MergeDecision.tier == tier)
+        if decision is not None:
+            stmt = stmt.where(MergeDecision.decision == decision)
+        if node_type is not None:
+            stmt = stmt.where(MergeDecision.node_type == node_type)
+        result = await self._session.execute(stmt)
         return [_to_dto(r) for r in result.scalars().all()]
 
     async def count_since(self, since: datetime) -> int:

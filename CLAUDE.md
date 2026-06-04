@@ -148,7 +148,7 @@ needed; `--no-cache` forces fresh calls). `OPENROUTER_API_KEY` lives in `.env`.
 | Graph DB | Neo4j 5.x community (APOC plugin) |
 | Relational + Vector DB | Postgres 16 + pgvector extension |
 | ORM | SQLAlchemy 2.x async |
-| Frontend (Phase 4B) | React + react-force-graph |
+| Frontend (Phase 3C) | React 18 + Vite + TanStack Query + react-force-graph-2d + Tailwind CSS |
 | Logging | structlog 24.x — JSON in prod, ConsoleRenderer in debug; contextvars for request_id |
 | Tooling | ruff (lint + format), mypy strict, pytest + pytest-asyncio, pre-commit |
 
@@ -282,7 +282,7 @@ graph. Full rationale: [docs/design/query-engine.md](docs/design/query-engine.md
 | 2E | Graph Write Path | *(folded into 2B graph_writer; entity dedup deferred to 3B)* | **Complete** |
 | 3A | Entity Resolution | Tiered resolver (rules → LLM → no-merge), MERGE_INTO edges, `merge_decisions` audit table, eval vs `ALIAS_GROUPS` | **Complete** |
 | 3B | Query Engine + Temporal | Multi-hop ownership/dependency traversal, temporal edges, contradiction detection, killer-query Cypher | **Complete** |
-| 3C | Blast Radius | Query engine: reachability analysis from a seed node | Pending |
+| 3C | Frontend + Demo | React frontend (4 pages + react-force-graph-2d), 3 new backend API endpoints, Docker integration, demo script | **Complete** |
 | 3D | Semantic Search | Embedding pipeline, pgvector indexing, hybrid graph-vector queries | Pending |
 
 > **Resequencing note (Phase 3A):** entity resolution was pulled forward to 3A because the
@@ -304,6 +304,55 @@ graph. Full rationale: [docs/design/query-engine.md](docs/design/query-engine.md
 4. Only then begin the task in the user's prompt.
 
 Do not re-derive architectural decisions already captured in ADRs. Do not silently expand scope beyond named limitations. If a task requires deviating from a prior decision, write a new ADR first and link it in HANDOFF.md.
+
+---
+
+## Frontend (LOCKED IN — Phase 3C)
+
+The React frontend lives in `frontend/`. It is a demo-grade app — no auth, no real-time
+features, no production hardening. Its job is to make the backend's capabilities visible in
+a 3-minute walkthrough.
+
+### Four pages
+
+| Route | Job |
+|-------|-----|
+| `/` | Landing — single-column (max-w 720px), KQ list with "Try it" links, no hero |
+| `/graph` | Full-page react-force-graph-2d canvas + sidebar; resolved/fragmented toggle; node hover/click; source-event modal |
+| `/queries` | KQ explorer — 2-pane layout; all four KQs with params; answer + provenance chain + source events |
+| `/audit` | Merge-decision audit trail — filterable table (tier, decision type, node type); expandable LLM reasoning |
+
+### Tech stack
+
+- **Vite 6 + React 18 + TypeScript strict** — Vitest + React Testing Library for tests
+- **React Router v6** — client-side routing
+- **TanStack Query v5** — all API state; `staleTime: 30s` for graph data, `0` for query results, `∞` for events (immutable)
+- **react-force-graph-2d** — canvas-based force graph; `nodeCanvasObject` for custom rendering; `linkCanvasObject` for dashed MERGE_INTO edges
+- **Tailwind CSS 3** — fully customized; theme tokens override defaults; **no shadcn/ui**
+- Custom primitives only: Button, Badge, Skeleton, ProgressBar, ErrorMessage
+
+### Design conventions (see ADR 0020 for full rationale)
+
+- Dark mode default (`html.dark`); `#0C0E12` background; `#E2E8F0` primary text
+- 7-color palette: bg / surface / s2 / border / txt / txt-muted / accent
+- Node colors: Decision=amber, Service=blue, System=gray, Person=green, Team=lavender, Message=slate
+- Monospace (JetBrains Mono) for: IDs, timestamps, UUIDs, code-like data only
+- **No**: gradient backgrounds, centered hero, glass-morphism, shadcn defaults, icons as decoration
+
+### New backend endpoints (Phase 3C)
+
+- `GET /api/graph?view=resolved|fragmented` — `backend/app/api/graph.py`
+- `GET /api/events/{event_id}` — `backend/app/api/events.py`
+- `GET /api/audit/merge-decisions` — `backend/app/api/audit.py`
+
+All three registered in `main.py`. CORS allows `localhost:3000` and `localhost:5173`.
+
+### Docker
+
+- `frontend/Dockerfile` — multi-stage: node:20-alpine build, nginx:1.27-alpine serve
+- `frontend/nginx.conf` — proxies `/api/` → `http://backend:8000`, SPA routing via `try_files`
+- `docker-compose.yml` — `frontend` service on port 3000, depends on `backend`
+- `docker compose up` brings up the full stack (Neo4j, Postgres, backend, frontend)
 
 ---
 

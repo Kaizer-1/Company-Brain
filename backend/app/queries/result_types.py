@@ -12,7 +12,7 @@ the generic ``QueryResult[T]`` — to JSON without extra glue.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 class QueryProvenance(BaseModel):
@@ -33,9 +33,14 @@ class QueryProvenance(BaseModel):
             if raw and raw not in bucket:
                 bucket.append(raw)
 
+    @computed_field  # type: ignore[misc]
     @property
     def all_event_ids(self) -> list[str]:
-        """Every distinct event id across all elements, sorted for stable output."""
+        """Every distinct event id across all elements, sorted for stable output.
+
+        Declared as a ``computed_field`` so FastAPI/Pydantic serialises it into
+        the JSON response — a plain ``@property`` is invisible to the serialiser.
+        """
         seen: set[str] = set()
         for ids in self.by_element.values():
             seen.update(ids)

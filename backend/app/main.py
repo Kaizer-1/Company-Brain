@@ -16,8 +16,12 @@ from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from alembic.runtime.migration import MigrationContext
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.api.audit import router as audit_router
+from app.api.events import router as events_router
+from app.api.graph import router as graph_router
 from app.api.health import router as health_router
 from app.api.queries import router as queries_router
 from app.config import settings
@@ -117,5 +121,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 app.add_middleware(RequestIDMiddleware)
+# Allow the frontend container (localhost:3000) and local Vite dev server (localhost:5173)
+# to reach the API during development and demo.  In production this would be locked to
+# the actual frontend origin.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 app.include_router(health_router)
 app.include_router(queries_router)
+app.include_router(graph_router)
+app.include_router(events_router)
+app.include_router(audit_router)

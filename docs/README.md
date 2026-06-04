@@ -38,6 +38,7 @@ ADRs record non-trivial design choices: what we picked, what we rejected, and wh
 | [decisions/0017-multi-source-decision-consolidation.md](decisions/0017-multi-source-decision-consolidation.md) | Content-similarity Decision consolidation (0.85 cosine + temporal proximity + distinct-formal-id guard) reusing the 3A MERGE_INTO mechanism; why it differs from entity resolution |
 | [decisions/0018-query-result-provenance.md](decisions/0018-query-result-provenance.md) | `QueryResult[T]` with a structural (non-optional) `QueryProvenance` of source-event IDs; why grounding is a type, not a convention |
 | [decisions/0019-contradiction-message-population.md](decisions/0019-contradiction-message-population.md) | Dedicated Phase-3B contradiction pass (Message ingestion + LLM-adjudicated CONTRADICTS) for KQ2; why not extend extraction or compare at query time |
+| [decisions/0020-frontend-design-philosophy.md](decisions/0020-frontend-design-philosophy.md) | Software-tools aesthetic, custom primitives over shadcn, dark-mode default, anti-pattern list; why the modal AI-slop frontend undermines the backend work |
 
 ---
 
@@ -65,6 +66,7 @@ Long-form design documents. UX wireframes and visual artefacts arrive in Phase 4
 | [design/extraction-pipeline.md](design/extraction-pipeline.md) | The LLM extraction pipeline + eval harness: structured-output prompting, the curated prompt (verbatim), chunking, validation, provenance, cost telemetry, and the failure-mode taxonomy |
 | [design/entity-resolution.md](design/entity-resolution.md) | The tiered entity resolver: fragmentation problem, three-tier decision logic, candidate generation, local embedding strategy, Tier 1 rules, the LLM adjudicator prompt, the MERGE_INTO edge model, eval methodology, and honest limitations |
 | [design/query-engine.md](design/query-engine.md) | The Phase-3B query engine: the four KQs restated with Cypher + unresolved-failure modes, the temporal model + `as_of`, Decision consolidation, the contradiction/Message pass, provenance shape, the edge-projection cleanup, performance, and the integration-eval methodology |
+| [design/frontend-architecture.md](design/frontend-architecture.md) | Phase-3C frontend architecture: tech stack rationale (Vite+React+TanStack Query+react-force-graph-2d), four-page structure, data-fetching strategy, styling conventions (design tokens, anti-patterns), nginx proxy pattern, production delta |
 
 ---
 
@@ -77,6 +79,16 @@ Generated quality reports. Numbers are honest and reproducible from the determin
 | [eval/phase-2b-results.md](eval/phase-2b-results.md) | Three-model extraction eval (gpt-4o-mini, claude-3.5-haiku, gemini-2.5-flash-lite): per-type precision/recall/F1, failure-mode counts, worst-case examples, cost, and a hand-written Discussion |
 | [eval/phase-3a-resolution-results.md](eval/phase-3a-resolution-results.md) | Entity-resolution eval vs `ALIAS_GROUPS` + `LOOK_ALIKE_PAIRS`: precision/recall/false-merge/missed-merge overall and per type, tier breakdown, correct/missed/false merge examples, cost, and a hand-written Discussion |
 | [eval/phase-3b-query-results.md](eval/phase-3b-query-results.md) | Killer-query integration eval: all four KQs **pass** on the live LLM-extracted graph (111 events, provenance valid); expected answers per KQ from `narrative.py`; hand-written Discussion on the ordering bug the run caught, per-query reliability, and extraction sensitivity |
+
+---
+
+## Demo
+
+Scripts and artefacts for the demo walkthrough.
+
+| File | Summary |
+|------|---------|
+| [demo/3-minute-walkthrough.md](demo/3-minute-walkthrough.md) | Literal 3-minute demo script with beat-by-beat timing; setup instructions; fallback answers for KQ2/KQ3 if interviewer asks |
 
 ---
 
@@ -93,3 +105,4 @@ One doc per subphase. Contains Q&A pairs and key whiteboard concepts for that ph
 | [interview-prep/phase-2b-readiness.md](interview-prep/phase-2b-readiness.md) | 10 Q&A pairs: OpenRouter rationale, extraction pipeline modules, evidence_quote discipline, curated schema vs JSON-Schema dump, ground truth from narrative.py, alias-tolerant matcher, three-model comparison + production pick, F1=0.78 breakdown, max_tokens/chunking trade-off, audit + confidence + provenance honesty |
 | [interview-prep/phase-3a-readiness.md](interview-prep/phase-3a-readiness.md) | 10 Q&A pairs + 5 whiteboard concepts: three tiers vs one threshold, @alice/Alice Chen walkthrough, MERGE_INTO vs deletion, local embeddings vs API, false/missed-merge rates, the adjudicator prompt, conservative LLM failure, Postgres vs Neo4j for the audit, scaling to 1M |
 | [interview-prep/phase-3b-readiness.md](interview-prep/phase-3b-readiness.md) | 10 Q&A pairs + 5 whiteboard concepts: KQ1 walkthrough, the `status<>'merged'` filter + edge projection, `as_of` vs `datetime.now()`, Decision consolidation vs entity resolution, KQ3 complexity at scale, why the eval is end-to-end, tracing provenance to Postgres, KQ4 on the unresolved graph, missed-edge impact on KQ3 |
+| [interview-prep/phase-3c-readiness.md](interview-prep/phase-3c-readiness.md) | 10 Q&A pairs + 5 whiteboard concepts: react-force-graph vs D3-scratch, resolved/fragmented toggle mechanics, why the audit page, full provenance flow, scaling the graph view past 1000 nodes, dark-mode default rationale, KQ1 click-through walkthrough, non-optional provenance, audit pagination approach, what's next |

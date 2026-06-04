@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-bg text-txt font-sans antialiased;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Scrollbar styling — subtle, matches the dark palette */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-surface;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border-strong rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-txt-muted;
+  }
+
+  /* Focus ring — single consistent style across all interactive elements */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-1 ring-offset-bg;
+  }
+
+  /* Selection color */
+  ::selection {
+    @apply bg-accent-faint text-txt;
+  }
+}
+
+@layer components {
+  /* Monospace data — IDs, timestamps, event UUIDs, code-like content */
+  .mono {
+    @apply font-mono text-xs tracking-tight;
+  }
+
+  /* Subtle divider line */
+  .divider {
+    @apply border-t border-border;
+  }
+
+  /* Thin top progress bar for loading states — NOT a spinner */
+  .progress-bar {
+    @apply fixed top-0 left-0 right-0 h-[2px] bg-accent overflow-hidden z-50;
+  }
+  .progress-bar::after {
+    content: '';
+    @apply absolute inset-y-0 left-0 w-1/3 bg-white/30 animate-progress;
+  }
+
+  /* Skeleton block */
+  .skeleton {
+    @apply bg-s2 rounded animate-skeleton;
+  }
+}
