@@ -4,6 +4,7 @@ const NAV = [
   { to: '/', label: 'overview', end: true },
   { to: '/graph', label: 'graph', end: false },
   { to: '/queries', label: 'queries', end: false },
+  { to: '/search', label: 'search', end: false },
   { to: '/audit', label: 'audit', end: false },
 ] as const;
 
@@ -38,7 +39,7 @@ export function TopBar() {
 
       {/* Keyboard shortcut hint */}
       <span className="font-mono text-2xs text-txt-faint select-none hidden sm:block">
-        g h/g/q/a
+        g h/g/q/s/a
       </span>
     </header>
   );

@@ -4,6 +4,7 @@ import { Audit } from './pages/Audit';
 import { Graph } from './pages/Graph';
 import { Landing } from './pages/Landing';
 import { Queries } from './pages/Queries';
+import { Search } from './pages/Search';
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
           <Route index element={<Landing />} />
           <Route path="graph" element={<Graph />} />
           <Route path="queries" element={<Queries />} />
+          <Route path="search" element={<Search />} />
           <Route path="audit" element={<Audit />} />
         </Route>
       </Routes>

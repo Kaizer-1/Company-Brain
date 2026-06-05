@@ -131,6 +131,42 @@ export interface MergeDecisionPage {
   offset: number;
 }
 
+// ── Search ───────────────────────────────────────────────────────────────────
+
+export interface SearchFilters {
+  source_kind?: string[] | null;
+  after?: string | null;
+  before?: string | null;
+  entity_type?: string[] | null;
+}
+
+export interface SearchRequest {
+  query: string;
+  k?: number;
+  filters?: SearchFilters | null;
+}
+
+export interface SearchHit {
+  event_id: string;
+  snippet: string;
+  source_kind: string;
+  source_ref: string;
+  occurred_at: string;
+  similarity_score: number;
+  final_score: number;
+  related_entity_ids: string[];
+}
+
+export interface SearchResult {
+  query: string;
+  hits: SearchHit[];
+  total_candidates: number;
+  query_embedding_ms: number;
+  vector_search_ms: number;
+  rerank_ms: number;
+  total_ms: number;
+}
+
 // ── Events ───────────────────────────────────────────────────────────────────
 
 export interface EventDTO {

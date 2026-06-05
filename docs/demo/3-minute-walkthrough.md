@@ -77,39 +77,56 @@
 
 ---
 
-## Beat 4: The Audit Trail (2:00–2:45)
+## Beat 4: Semantic Search (2:00–2:30)
 
-- Click `/audit`.
+- Click `/search`.
 
-> "Every AI decision is logged. There are 25 resolution merges and around 490 no-merges in
-> this run. Let me filter to Tier-2 LLM merges — these are the close cases where the
-> deterministic rules didn't fire and the model had to judge."
+> "The killer queries answer questions whose shape you know in advance. But what about
+> 'what was the discussion about billing last month?' For that, there's hybrid search."
 
-- Set tier to "Tier 2", decision to "LLM merge".
+- Type "decisions about auth migration signing keys" in the search box. Hit Enter.
 
-> "11 LLM merges. Let me expand one."
+> "Five results in about 200ms — the D-0008 key-rotation ADR ranked first, the Slack
+> messages about signing keys in the auth migration channel ranked second and third. The
+> score breakdown: 0.7 weight on semantic similarity, 0.3 on how many graph entities this
+> event asserted. Both signals together."
 
-- Click "Expand" on a row with reasoning.
+- Click "view source" on one result.
 
-> "The model says: 'Both refer to the same person — same team, same email domain, 92%
-> embedding similarity.' That's the reasoning that produced the merge edge you saw as a
-> dashed line in the graph. I can defend every choice the system made."
+> "Same event modal as before — search results are grounded in the same provenance system."
+
+- Close the modal.
 
 ---
 
-## Beat 5: The Closer (2:45–3:00)
+## Beat 5: The Audit Trail (2:30–2:50)
+
+- Click `/audit`.
+
+> "Every AI decision is logged — resolution merges, LLM adjudications. Let me filter to
+> Tier-2 LLM merges."
+
+- Set tier to "Tier 2", decision to "LLM merge".
+- Click "Expand" on a row.
+
+> "Full reasoning for every merge. The audit trail shows the system's work, not just its
+> output. I can defend every node in the graph."
+
+---
+
+## Beat 6: The Closer (2:50–3:00)
 
 - Return to `/`.
 
-> "Full stack: Neo4j for the graph, Postgres for the event log and audit trail, FastAPI,
-> React with react-force-graph-2d for the visualisation. Extraction ran through three LLMs
-> for comparison — haiku had the best F1. The whole pipeline runs end-to-end in one
-> `docker compose up`. Happy to go deeper on any piece."
+> "Full stack: Neo4j, Postgres + pgvector, FastAPI, React. Entity resolution, killer-query
+> traversals, semantic search — all in one `docker compose up`. Happy to go deeper."
 
 ---
 
 ## Notes
 
-- If the interviewer wants to see KQ3 (blast radius): `/queries → KQ3 → service: payments-api → Run`. Answer: 10 services, 4 people, 1 decision. The blast radius at depth 2.
-- If they ask about KQ2 (contradictions): `/queries → KQ2 → Run`. Answer: Decision D-0005 ("new integrations stay on legacy-auth through year-end") is contradicted by a Slack thread 22 days ago where @alice and @iris said "new work goes on auth-service now." No superseding decision exists — the graph exposed an undocumented policy change.
-- If they ask why not RAG: the answer is in the KQ "Why RAG fails" annotations on the landing page, plus the interview-prep doc has 80-word explanations for each.
+- If the interviewer wants to see KQ3 (blast radius): `/queries → KQ3 → service: payments-api → Run`. Answer: 10 services, 4 people, 1 decision.
+- If they ask about KQ2 (contradictions): `/queries → KQ2 → Run`. Answer: D-0005 contradicted by Slack thread 22 days ago — an undocumented policy change exposed by the graph.
+- For search: try "legacy-auth stale guide deprecated" or "event-bus Kafka async". Both return highly relevant results within 200ms.
+- If they ask why not RAG: KQ "Why RAG fails" notes on landing page + phase-3d-readiness.md Q8 has the 80-word answer.
+- If they ask about search eval: Recall@10=0.942, MRR=0.910. `docs/eval/phase-3d-search-results.md` has the numbers.

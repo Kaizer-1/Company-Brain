@@ -1,11 +1,12 @@
 """Integration eval for the four killer queries (Phase 3B; ADR 0013 discipline).
 
 This is the *end-to-end* eval: it runs the whole pipeline — wipe → seed events → extract →
-resolve entities → consolidate decisions → project edges → enrich temporal → ingest messages +
-detect contradictions → run each KQ → compare to expected. (Temporal enrichment runs before
-contradiction detection so the detector sees normalised decision statuses.) Even one wrong
-answer fails the demo, so the eval tests the full chain, not isolated layers. Expected answers are
-hand-derived from ``narrative.py`` (the single source of truth); partial credit is not allowed.
+embed events (Phase 3D) → resolve entities → consolidate decisions → project edges →
+enrich temporal → ingest messages + detect contradictions → run each KQ → compare to expected.
+(Temporal enrichment runs before contradiction detection so the detector sees normalised
+decision statuses.) Even one wrong answer fails the demo, so the eval tests the full chain,
+not isolated layers. Expected answers are hand-derived from ``narrative.py`` (the single
+source of truth); partial credit is not allowed.
 
 Extraction is stochastic; the eval defaults to ``claude-3.5-haiku`` (the highest-F1 model in the
 2B comparison) so the demo is reliable (see docs/design/query-engine.md §8). Person checks are
@@ -33,6 +34,7 @@ from app.queries.kq4_change_tracking import track_changes
 from app.resolution.consolidator import consolidate_decisions
 from app.resolution.projection import project_resolved_edges
 from app.resolution.resolver import resolve_graph
+from app.search.indexer import embed_events
 from app.synthetic.generator import SyntheticDataGenerator
 from app.synthetic.seeder import seed_postgres
 from app.temporal.enricher import enrich_temporal
@@ -122,6 +124,10 @@ async def run_query_eval(
         session_factory=session_factory, neo4j_driver=driver, client=client, model=model
     )
     await pipeline.extract_all(events)
+
+    # 1b. Embed events (Phase 3D — after extraction, before resolution).
+    async with session_factory() as session:
+        await embed_events(session)
 
     # 2. Resolve entities, 3. consolidate decisions, 4. project edges onto canonical winners.
     async with session_factory() as session:

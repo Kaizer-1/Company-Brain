@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, utc_now
 
-EMBEDDING_DIM = 1536
+EMBEDDING_DIM = 384  # BAAI/bge-small-en-v1.5; migrated from 1536 in 0004 (ADR 0021)
 
 
 class EventEmbedding(Base):

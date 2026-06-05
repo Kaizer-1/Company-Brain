@@ -19,7 +19,7 @@ def test_embedding_primary_key_is_event_id() -> None:
 
 
 def test_embedding_dim_constant() -> None:
-    assert EMBEDDING_DIM == 1536
+    assert EMBEDDING_DIM == 384
 
 
 def test_embedding_columns_present() -> None:

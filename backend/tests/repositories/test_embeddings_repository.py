@@ -15,7 +15,7 @@ from app.schemas.postgres import EventCreate, EventEmbeddingCreate
 
 
 def _make_vector(seed: int = 0) -> list[float]:
-    """Create a normalised 1536-dimensional random unit vector with a fixed seed.
+    """Create a normalised EMBEDDING_DIM-dimensional random unit vector with a fixed seed.
 
     Uses random.Random so each seed produces a genuinely different direction,
     unlike scalar-multiple approaches that produce identical normalised vectors.
@@ -133,7 +133,7 @@ async def test_similar_to_orders_by_distance(db_session: AsyncSession) -> None:
 
     # query == v1 exactly, so cosine similarity(query, v1) = 1.0 > sim(query, v2)
     # High threshold: e1 (cos_sim ≈ 1.0 with identical vector) must appear;
-    # e2 (nearly orthogonal, cos_sim ≈ 0 in 1536-d space) must not.
+    # e2 (nearly orthogonal, cos_sim ≈ 0 in 384-d space) must not.
     results = await repo_emb.similar_to(query, limit=10, threshold=0.9)
     result_ids = {r.event_id for r in results}
     assert e1 in result_ids, "e1 must appear: query equals v1 exactly (cos_sim = 1.0)"

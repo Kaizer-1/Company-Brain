@@ -26,6 +26,7 @@ export function useKeyboardNav() {
           case 'h': navigate('/'); break;
           case 'g': navigate('/graph'); break;
           case 'q': navigate('/queries'); break;
+          case 's': navigate('/search'); break;
           case 'a': navigate('/audit'); break;
         }
         return;

@@ -178,5 +178,5 @@ async def test_embedding_column_is_vector_type(migrated_engine: AsyncEngine) -> 
     assert row is not None, "embedding column not found in event_embeddings"
     assert row.udt_name == "vector", (
         f"Expected embedding column to have udt_name 'vector', got '{row.udt_name}'. "
-        "The ALTER COLUMN TYPE vector(1536) in the migration may have failed."
+        "The ALTER COLUMN TYPE vector(384) in migration 0004 may have failed."
     )

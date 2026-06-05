@@ -283,7 +283,7 @@ graph. Full rationale: [docs/design/query-engine.md](docs/design/query-engine.md
 | 3A | Entity Resolution | Tiered resolver (rules → LLM → no-merge), MERGE_INTO edges, `merge_decisions` audit table, eval vs `ALIAS_GROUPS` | **Complete** |
 | 3B | Query Engine + Temporal | Multi-hop ownership/dependency traversal, temporal edges, contradiction detection, killer-query Cypher | **Complete** |
 | 3C | Frontend + Demo | React frontend (4 pages + react-force-graph-2d), 3 new backend API endpoints, Docker integration, demo script | **Complete** |
-| 3D | Semantic Search | Embedding pipeline, pgvector indexing, hybrid graph-vector queries | Pending |
+| 3D | Semantic Search | Embedding pipeline, pgvector indexing, hybrid graph-vector queries | **Complete** |
 
 > **Resequencing note (Phase 3A):** entity resolution was pulled forward to 3A because the
 > fragmented nodes from 2B's best-effort write path block the killer-query traversals. The
@@ -353,6 +353,49 @@ All three registered in `main.py`. CORS allows `localhost:3000` and `localhost:5
 - `frontend/nginx.conf` — proxies `/api/` → `http://backend:8000`, SPA routing via `try_files`
 - `docker-compose.yml` — `frontend` service on port 3000, depends on `backend`
 - `docker compose up` brings up the full stack (Neo4j, Postgres, backend, frontend)
+
+---
+
+## Semantic Search (LOCKED IN — Phase 3D)
+
+Hybrid retrieval layer: vector similarity over event text, blended with graph structural
+density. The search system is the bridge from rigid KQ templates to open-ended retrieval.
+Full design: `docs/design/semantic-search.md`. ADR 0021 (dimension migration), ADR 0022
+(blend weights). Eval: `docs/eval/phase-3d-search-results.md`.
+
+### Embedding model
+
+`BAAI/bge-small-en-v1.5`, 384 dims, local CPU inference. Same model as entity resolution
+(Phase 3A). One singleton in `app/resolution/embeddings.py`, wrapped by
+`app/search/embedder.py`. Never load a second instance.
+
+### What was migrated
+
+`event_embeddings.embedding` migrated from `vector(1536)` to `vector(384)` in Alembic
+migration 0004. The 1536-dim column was a Phase 1C placeholder. `EMBEDDING_DIM = 384` in
+`app/models/embeddings.py`.
+
+### Pipeline integration
+
+`embed_events()` in `app/search/indexer.py` runs after extraction, before entity resolution
+in `app/eval/query_eval.py`. The step is idempotent. `embed_events()` calls
+`session.commit()` explicitly — the caller does not need to commit.
+
+### API surface
+
+`POST /api/search` — registered in `main.py` alongside the existing routers. CORS updated
+to allow POST.
+
+### Eval numbers (honest)
+
+Recall@10=0.942, MRR=0.910 (both exceed targets). Warm latency ~149ms per query. 3 partial
+misses documented in `docs/eval/phase-3d-search-results.md`.
+
+### Frontend
+
+`/search` page with two-pane layout: filter controls (left) + ranked result cards (right).
+ResultCard has source drilldown via EventModal. `g s` keyboard shortcut. `search` nav link
+between `queries` and `audit` in TopBar.
 
 ---
 
