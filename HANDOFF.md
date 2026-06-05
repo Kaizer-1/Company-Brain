@@ -160,9 +160,9 @@ the vector value is bound via the pgvector codec, not interpolated.
    ```
 
 3. **Eval latency "FAIL" is a harness artifact**: The eval script loads bge-small fresh on
-   the first query (~15s cold load). The reported mean latency of 902ms fails the 500ms target.
-   Warm per-query latency is ~149ms mean across the remaining 19 queries (measured directly
-   from per-query logs). The deployed backend has the model warm from startup. The latency
+   the first query (~12–15s cold load). The reported mean latency (660ms in the second run,
+   902ms in the first) fails the 500ms target. Warm per-query latency is ~41ms mean across
+   the remaining 19 queries. The deployed backend has the model warm from startup. The latency
    target is met in the production path; the eval script latency is documented honestly.
 
 ---
@@ -187,6 +187,15 @@ the vector value is bound via the pgvector codec, not interpolated.
 
 4. **`run_search_eval.py` script not in Docker image**: same as deviation #2 above. The
    eval was run locally via `uv run python backend/scripts/run_search_eval.py`.
+
+5. **Graph signal is inert at current corpus scale (ablation finding):** A post-rebuild eval
+   run (after re-running the full extraction pipeline) produced identical Recall@10=0.942
+   and MRR=0.910. The graph density signal (`W_GRAPH=0.3`) does not reorder the top-10 vector
+   results on this corpus — vector retrieval carries the recall on its own. Options for Phase
+   4A: (a) increase `W_GRAPH` to 0.5+ and re-eval, (b) replace degree count with a more
+   discriminating measure (path-to-Decision, betweenness centrality), (c) make the graph
+   signal conditional on query type in the agent layer rather than using a static blend.
+   Documented in `docs/eval/phase-3d-search-results.md` Discussion section.
 
 ---
 
