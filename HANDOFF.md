@@ -8,7 +8,7 @@
 
 ## Subphase
 
-Phase 3D — Semantic Search (Hybrid Retrieval Layer)
+Phase 4A — The Agent Layer
 
 ## Date
 
@@ -18,97 +18,80 @@ Phase 3D — Semantic Search (Hybrid Retrieval Layer)
 
 ## What Was Built
 
-### Schema migration
+A LangGraph agent that turns a natural-language question into a grounded answer with
+clickable provenance. Routing → typed-tool execution → answer synthesis → provenance
+verification, exposed at `POST /api/ask` and a new `/ask` frontend page.
 
-- **`backend/alembic/versions/0004_embedding_dimension_fix.py`** — drops and recreates
-  `event_embeddings` with `vector(384)` (migrated from the Phase 1C placeholder
-  `vector(1536)`). HNSW index recreated with same parameters (`m=16, ef_construction=64`).
-  Defensive row-count guard refuses to proceed if the table is non-empty (override with
-  `-x force=true`). Applied automatically on backend startup.
+### Backend: `app/agent/` module (new)
 
-- **`backend/app/models/embeddings.py`** — `EMBEDDING_DIM = 384` (was 1536). The constant
-  propagates to the ORM column type and the `EventEmbeddingRepository.similar_to()` bind
-  param.
+- `config.py` — `AgentConfig` dataclass: model names (`anthropic/claude-3.5-haiku` for both
+  router + synthesis), temperatures, retry cap (2), `search_k=8`, prompt paths. Prompts are
+  read per-request so a volume-mounted edit takes effect without restart.
+- `state.py` — `AgentState` TypedDict (`total=False`) + `RouteLiteral`/`ROUTE_VALUES`. Added
+  `cost_usd` channel for per-question cost accumulation.
+- `schemas.py` — LLM-boundary models (`RouteDecision`, `AnswerWithCitations` with
+  `citations: Field(min_length=1)`) + HTTP models (`AskRequest`, `AskResponse`, `Citation`,
+  `AgentStateDump` incl. `cost_usd`). **`RouteLiteral` is imported at runtime** (`# noqa: TC001`)
+  — it's a Pydantic field type, breaks model-building under TYPE_CHECKING.
+- `deps.py` — `AgentDeps` (client, config, neo4j_driver, session_factory) bound into nodes via
+  `functools.partial`.
+- `llm.py` — `complete_to_model[T]`: shared call → strip-fences → `json.loads` → `model_validate`,
+  raising typed `AgentLLMError` (stage call/json/schema). Broad call-boundary catch so the
+  load-bearing router can always fall back.
+- `router.py` — `classify_route` node. One enum-constrained LLM call; any failure falls back to
+  `route="search"` (never a refusal).
+- `tools.py` — `kq1_owner`/`kq2_contra`/`kq3_blast`/`kq4_change` (thin glue over `app.queries`),
+  `general_search` (over `hybrid_search`, k=8), `empty_answer` terminal, `unknown` terminal.
+- `synthesis.py` — `synthesize_answer`; strict prompt on retry; graceful fallback on LLM failure.
+- `verification.py` — `verify_provenance` (pure Python) + `route_after_verify` conditional edge.
+  **`AgentState` imported at runtime** (`# noqa: TC001`) — LangGraph calls `get_type_hints` on
+  the edge function at compile time.
+- `graph.py` — `build_agent_graph(deps)` assembles + compiles the StateGraph.
+- `runner.py` — `run_agent(question, *, neo4j_driver, session_factory, debug, config, client)`;
+  resolves citation UUIDs → full `Citation` objects (one batched lookup); owns/closes the LLM
+  client unless injected.
+- `api_router.py` — `POST /api/ask`, registered in `main.py` after `search_router`.
+- `prompts/{router,synthesis,synthesis_strict}.txt`.
 
-### Backend: `app/search/` module
+### Pyproject
 
-New module mirroring `app/resolution/` structure:
+- Added `langgraph>=0.2.0` (resolved to 1.2.4; pulled `langchain-core` 1.4.0 — **no langchain**).
 
-- `config.py` — tunable constants: `W_VEC=0.7`, `W_GRAPH=0.3`, `BASE_FANOUT=3`,
-  `FILTER_FANOUT=5`, `EMBED_BATCH_SIZE=32`, `SNIPPET_CHARS=200`.
-- `embedder.py` — async wrappers (`embed_query`, `embed_batch`) over the shared
-  `resolution/embeddings.py` singleton. No second model instance.
-- `indexer.py` — `embed_events()` pipeline step: reads un-embedded events, batches through
-  bge-small (32 per batch), upserts via `EventEmbeddingRepository`. Idempotent. Calls
-  `session.commit()` explicitly.
-- `schemas.py` — `SearchRequest`, `SearchFilters`, `SearchHit`, `SearchResult`. All explicit
-  fields (no computed Pydantic properties — per HANDOFF Deviation #3 from 3C).
-- `retriever.py` — `hybrid_search()`: 7-stage pipeline (encode → vector search → event
-  metadata → event filters → Neo4j entity lookup → entity_type filter → rerank + top-k).
-  Per-stage timings in milliseconds.
-- `router.py` — `POST /api/search`. Registered in `main.py`. CORS updated to allow POST.
+### Frontend: `/ask` page (new)
 
-### Pipeline integration
-
-- **`backend/app/eval/query_eval.py`** — `embed_events()` called after extraction, before
-  resolution. Pipeline order: wipe → seed → extract → **embed** → resolve → consolidate →
-  project → temporal → messages+contradictions → queries.
-
-### Backend scripts
-
-- **`backend/scripts/embed_events.py`** — standalone script to embed events against the live
-  stack. (Note: not volume-mounted in Docker; run via `docker compose exec backend python
-  scripts/embed_events.py` after rebuilding, or use inline Python as shown in the eval
-  section below.)
-- **`backend/scripts/run_search_eval.py`** — eval runner. Outputs Markdown report.
-
-### Frontend
-
-- **`frontend/src/pages/Search.tsx`** — two-pane layout: FilterPanel (left, ~360px) +
-  search form + results (right). Uses `useMutation` from TanStack Query v5.
-- **`frontend/src/components/search/ResultCard.tsx`** — dense result card with snippet,
-  source badge, similarity score pill, entity chips, "view source" link to EventModal.
-- **`frontend/src/components/search/FilterPanel.tsx`** — source_kind chips + entity_type
-  chips + date range inputs + reset button.
-- **`frontend/src/api/search.ts`** — `runSearch()` typed client function (POST).
-- **`frontend/src/types.ts`** — added `SearchFilters`, `SearchRequest`, `SearchHit`,
-  `SearchResult`.
-- **`frontend/src/App.tsx`** — added `/search` route.
-- **`frontend/src/components/layout/TopBar.tsx`** — added `search` nav link between
-  `queries` and `audit`. Shortcut hint updated to `g h/g/q/s/a`.
-- **`frontend/src/hooks/useKeyboardNav.ts`** — added `g s` → `/search` shortcut.
+- `pages/Ask.tsx` — single-column page; always queries with `debug=true`. ⌘↵ to ask.
+- `components/ask/AnswerView.tsx` — renders `[evt:UUID]` markers as clickable superscripts.
+- `components/ask/CitationList.tsx` — numbered Sources list → EventModal.
+- `components/ask/AgentTrace.tsx` — `<details>` disclosure: route, reasoning, timings, verified.
+- `api/ask.ts` — `runAsk(question, debug)`.
+- `types.ts` — added `AskRequest`/`AskResponse`/`Citation`/`AgentStateDump`/`AgentRoute`/`AgentConfidence`.
+- `App.tsx` — `/ask` route. `TopBar.tsx` — `ask` is the **first** nav item; hint `g k/h/g/q/s/a`.
+- `hooks/useKeyboardNav.ts` — `g k` → `/ask`.
 
 ### Eval
 
-- **`backend/data/search_eval_questions.json`** — 20 hand-curated NL questions with
-  expected event UUIDs based on the actual Northwind Payments corpus.
-- **`backend/app/eval/search_eval.py`** — eval logic: Recall@10, MRR, mean latency per
-  question; `render_search_report()` for Markdown output.
-- **`docs/eval/phase-3d-search-results.md`** — real eval run results with honest Discussion.
+- `backend/data/agent_eval_questions.json` — 30 hand-curated questions (5 per KQ, 5 search,
+  5 out-of-scope). KQ questions carry `expected_tool_input`; the eval derives gold citations by
+  calling the typed query directly (event UUIDs are random per seed, so no hard-coded ids).
+- `backend/app/eval/agent_eval.py` — eval logic + `render_agent_report`.
+- `backend/scripts/run_agent_eval.py` — runner.
+- `docs/eval/phase-4a-agent-results.md` — **real numbers + hand-written Discussion**.
 
-### Documentation
+### Docs
 
-- **`docs/design/semantic-search.md`** (~900 words) — architecture, module structure,
-  HNSW rationale, eval methodology, production-scale changes.
-- **`docs/decisions/0021-embedding-dimension-migration.md`** — why 384 not 1536, migration
-  strategy, alternatives rejected.
-- **`docs/decisions/0022-hybrid-search-blend-weights.md`** — 0.7/0.3 blend, graph signal
-  normalisation, why not LLM rerank, tuning path.
-- **`docs/interview-prep/phase-3d-readiness.md`** — 10 Q&A pairs + 5 whiteboard concepts.
-  Topics: local model, bge-small, HNSW, linear blend vs LLM rerank, graph signal, filter/
-  fanout, placeholder table, search vs KQs, production scale, ablation.
-- **`docs/demo/3-minute-walkthrough.md`** — updated with search beat between KQ demo and
-  audit trail.
-- **`docs/README.md`** — updated with all new docs.
+- `docs/design/agent-architecture.md` (~1400 words).
+- ADRs `0023` (typed tools not generated Cypher), `0024` (route-then-execute), `0025`
+  (provenance verification loop).
+- `docs/interview-prep/phase-4a-readiness.md` (12 Q&A + 6 whiteboard concepts).
+- `docs/demo/3-minute-walkthrough.md` — added Beat 3.5 (`/ask`), updated closer + notes.
+- `docs/README.md` — all new docs listed.
 
-### Tests
+### Tests (`backend/tests/agent/`, 38 passing)
 
-- **`backend/tests/search/test_search_embedder.py`** — 8 unit tests: shape, normalisation,
-  determinism, empty batch, batch vs query consistency.
-- **`backend/tests/search/test_search_retriever.py`** — 16 unit tests: rerank math, filter
-  application, fanout flag, empty index, sort order (mocked DB + Neo4j).
-- **`backend/tests/search/test_search_api.py`** — 8 integration tests with real Postgres
-  testcontainer: hits returned, k limit, filter, timing fields, validation.
+- `conftest.py` (FakeClient + make_deps), `test_agent_router.py` (11), `test_agent_tools.py`,
+  `test_agent_synthesis.py`, `test_agent_verification.py`, `test_agent_runner.py`,
+  `test_agent_api.py` (testcontainer Postgres + mocked Neo4j + scripted FakeClient).
+- Frontend: `src/__tests__/Ask.test.tsx` (5 tests). All 26 frontend tests pass.
 
 ---
 
@@ -116,149 +99,110 @@ New module mirroring `app/resolution/` structure:
 
 | ADR | Decision |
 |-----|---------|
-| [0021](docs/decisions/0021-embedding-dimension-migration.md) | Migrate event_embeddings from vector(1536) → vector(384); same bge-small model as resolution; drop+recreate with defensive guard |
-| [0022](docs/decisions/0022-hybrid-search-blend-weights.md) | Linear blend 0.7/0.3; graph signal log-normalised; no LLM rerank (eval-driven justification deferred to Phase 4A) |
+| [0023](docs/decisions/0023-typed-tools-not-generated-cypher.md) | Agent calls five typed Python functions, never LLM-generated Cypher |
+| [0024](docs/decisions/0024-route-then-execute-architecture.md) | Constrained route classifier → fixed branch → synthesis, not an end-to-end tool-calling loop |
+| [0025](docs/decisions/0025-provenance-verification-loop.md) | Verify-then-retry (max 2) Python check that every cited event id is in the tool's provenance |
 
-**Key in-code call — `session.commit()` in `embed_events()`**: Unlike the entity resolution
-modules, `embed_events()` calls `session.commit()` explicitly rather than relying on the
-caller. Reason: `async_sessionmaker`'s context manager does NOT auto-commit on exit, and the
-embeddings must be visible to subsequent sessions in the same pipeline invocation. The tests
-use `asyncio.run(_seed_and_embed(dsn))` (isolated loop with committed data) + fresh engine
-for TestClient to avoid asyncpg event-loop crossing.
-
-**Key in-code call — `_vector_search` statement**: The `_VECTOR_SEARCH_STMT` is a
-module-level SQLAlchemy `text()` statement with bound `Vector(EMBEDDING_DIM)` and `Integer`
-params — same pattern as `EventEmbeddingRepository.similar_to()`. No SQL injection surface;
-the vector value is bound via the pgvector codec, not interpolated.
+**Model**: `anthropic/claude-3.5-haiku` for both router and synthesis (the existing
+`ADJUDICATOR_MODEL` string), configurable via `AgentConfig`. One family, two roles.
 
 ---
 
 ## Deviations from Spec
 
-1. **No `unit/` test subdirectory naming**: the spec says `test_search_embedder.py` and
-   `test_search_retriever.py` in `unit/`. They are placed in `backend/tests/search/`
-   alongside the integration test (`test_search_api.py`). The `unit/` directory exists for
-   extraction tests but the search tests use the same naming convention as the resolution
-   and API test directories — one directory per module, not split by unit/integration.
+1. **KQ nodes fall back to `general_search`, not `unknown`, on missing params.** Decision 3 in
+   CLAUDE.md said "fall through to unknown if invalid". A question that routed to a KQ is about
+   the company graph; refusing it violates the "never refuse a company question" rule. Missing a
+   required param (e.g. no decision id) falls back to grounded search with a note appended to
+   `route_reasoning`. `unknown` is reserved for genuinely out-of-scope questions the router flags.
 
-2. **`embed_events.py` script not volume-mounted**: `backend/scripts/` is not volume-mounted
-   in Docker. The script must be run via `docker compose exec backend python
-   scripts/embed_events.py` after rebuilding the image, or using inline Python:
-   ```
-   docker compose exec backend python -c "
-   import asyncio, sys; sys.path.insert(0, '/app')
-   from app.config import settings
-   from app.db.session import build_engine, build_session_factory
-   from app.search.indexer import embed_events
-   async def run():
-       engine = build_engine(settings.postgres_dsn)
-       sf = build_session_factory(engine)
-       async with sf() as session: n = await embed_events(session)
-       await engine.dispose(); print(f'{n} embeddings written')
-   asyncio.run(run())
-   "
-   ```
+2. **`cost_usd` added to `AgentState` and `AgentStateDump`** (not in the spec's state shape) so
+   the eval can report per-question cost. Surfaced only in the debug dump, not the top-level
+   `AskResponse`.
 
-3. **Eval latency "FAIL" is a harness artifact**: The eval script loads bge-small fresh on
-   the first query (~12–15s cold load). The reported mean latency (660ms in the second run,
-   902ms in the first) fails the 500ms target. Warm per-query latency is ~41ms mean across
-   the remaining 19 queries. The deployed backend has the model warm from startup. The latency
-   target is met in the production path; the eval script latency is documented honestly.
+3. **Eval citation ground truth is computed, not stored.** Event UUIDs are `uuid4` (random per
+   seed), so hard-coding `expected_citation_event_ids` would be brittle. For KQ questions the gold
+   set is the typed query's own provenance, computed at eval time; search/unknown questions have no
+   gold and are excluded from the citation-overlap metric.
+
+4. **`docs/eval/phase-4a-agent-results.md` Discussion is hand-written**, appended to the
+   script-generated table (same pattern as the 3D search eval). A re-run overwrites the table; the
+   Discussion must be re-added (the run is stochastic + costs real $, so re-runs are deliberate).
 
 ---
 
 ## Open Questions
 
-1. **`npm install` not run** (carried from 3C): `frontend/node_modules/` doesn't exist.
-   The Docker build runs `npm ci` from `package.json`. Local dev requires `cd frontend && npm install`.
+1. **Latency missed the 4s target (mean 6645ms).** Two sequential network LLM calls; retries push
+   failure cases to 10–17s. Median ~6.4s; `unknown` (one call) is 1.4–2.3s. Fix is Phase 4B:
+   stream synthesis (perceived first-token ~2s), cache routing, faster router model. Documented in
+   the eval Discussion.
 
-2. **Backend healthcheck `curl` absence** (carried from 3C): the backend container
-   healthcheck uses `curl` which is absent from `python:3.12-slim`. Workaround: switch to
-   `CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]`.
+2. **One eval question (q10) exhausts the retry budget** (`error=provenance_failed`). KQ2 returns
+   many contradiction events → larger legal-id set → higher chance of an off-by-one citation. The
+   lever is shrinking the candidate set the KQ2 synthesiser sees, not more retries. Left honest.
 
-3. **Graph entity counts not populated in the live DB**: The `event_embeddings` table is
-   populated (111 embeddings), but the full extraction + resolution pipeline has not been
-   re-run after the schema migration. Neo4j has nodes from the previous pipeline run (Phase
-   3B/3C). The search endpoint works (graph signal falls back to 0 for events whose Neo4j
-   entity count is 0), but to get accurate graph-signal reranking, run the full pipeline:
-   `docker compose exec backend python backend/scripts/extract_all.py --model
-   anthropic/claude-3.5-haiku && docker compose exec backend python
-   backend/scripts/resolve_entities.py` (after rebuilding for scripts).
+3. **Pre-existing test failures, NOT from 4A** (confirmed by stashing 4A changes): `test_audit.py`,
+   `test_graph.py`, `test_events.py` fail/error on the current checkout due to old test patterns
+   (`asyncio.get_event_loop().run_until_complete()`, `Event(id=...)`). The KQ, search, and all 4A
+   tests pass. These should be fixed in a cleanup pass but are out of 4A scope.
 
-4. **`run_search_eval.py` script not in Docker image**: same as deviation #2 above. The
-   eval was run locally via `uv run python backend/scripts/run_search_eval.py`.
+4. **Pre-existing frontend build was broken** (`ResultCard.tsx` unused `nodeTypeBadge` import, an
+   error under `tsc -b` / `noUnusedLocals`). Fixed it (one-line) to unblock the frontend image
+   build; the 3C/3D frontend had never been built in Docker (3D HANDOFF: "not yet confirmed in
+   browser"). Frontend now builds and serves `/ask`.
 
-5. **Graph signal is inert at current corpus scale (ablation finding):** A post-rebuild eval
-   run (after re-running the full extraction pipeline) produced identical Recall@10=0.942
-   and MRR=0.910. The graph density signal (`W_GRAPH=0.3`) does not reorder the top-10 vector
-   results on this corpus — vector retrieval carries the recall on its own. Options for Phase
-   4A: (a) increase `W_GRAPH` to 0.5+ and re-eval, (b) replace degree count with a more
-   discriminating measure (path-to-Decision, betweenness centrality), (c) make the graph
-   signal conditional on query type in the agent layer rather than using a static blend.
-   Documented in `docs/eval/phase-3d-search-results.md` Discussion section.
+5. **`backend/data/` is not volume-mounted or COPYed into the image.** Only the eval *script* reads
+   `agent_eval_questions.json`, and the script is run via `uv` locally, so this is fine. If the eval
+   ever needs to run inside the container, add a COPY.
 
 ---
 
 ## Definition of Done Check
 
-- ✓ `docs/design/semantic-search.md` ≥ 800 words (actual: ~900 words)
-- ✓ ADR 0021 (embedding dimension) written
-- ✓ ADR 0022 (blend weights) written
-- ✓ `embed_events()` idempotent and integrated into query eval pipeline
-- ✓ `POST /api/search` works against live dataset; warm latency ~149ms for k=10
-- ✓ `/search` page renders, filters work, result cards link to EventModal
-- ✓ Search eval ran end-to-end; `docs/eval/phase-3d-search-results.md` has real numbers
-- ✓ All four KQs unaffected (Phase 3D added new modules; no 3B code paths touched)
-- ✓ `mypy --strict` target: new modules follow type conventions (no `Any` without comment)
-- ✓ All new tests pass: 32 tests in `backend/tests/search/` (8 embedder + 16 retriever + 8 API)
-- ✓ Existing tests unaffected: models, repositories, alembic migration tests all pass
-- ✓ `docker compose up` brings full stack including `/api/search`; backend reloads with new router
-- ✓ HANDOFF.md updated; CLAUDE.md updated (3D complete, Semantic Search section added)
-- ⚠ `npm install` not run (Open Question #1 — carried from 3C)
-- ⚠ Full extraction pipeline not re-run post-migration (Open Question #3 — Neo4j graph signal is 0 until re-extracted)
+- ✓ `docs/design/agent-architecture.md` ≥ 1200 words (~1400)
+- ✓ Three ADRs written (0023, 0024, 0025)
+- ✓ LangGraph StateGraph assembles + runs end-to-end against the live backend
+- ✓ `POST /api/ask` works against the populated graph (verified in-container + via nginx proxy)
+- ✓ `/ask` page renders; citations clickable to EventModal; agent trace expands
+- ✓ Agent eval ran end-to-end; results doc has real numbers + Discussion
+- ✓ Route accuracy 1.000 (≥ 0.85); refusal correctness 1.000 (≥ 0.80)
+- ✓ Provenance verification rate 0.864 (≥ 0.80); citation overlap 0.608 (≥ 0.50)
+- ✓ Mean cost reported honestly ($0.00307/question)
+- ⚠ Mean latency 6645ms > 4000ms target — documented with failure-mode + mitigations (Open Q #1)
+- ✓ All four KQs still pass; semantic search unaffected (no 3B/3D code paths touched)
+- ✓ `mypy --strict` clean across `backend/app/agent/` (+ `eval/agent_eval.py`)
+- ✓ 38 new agent tests pass; 26 frontend tests pass; pre-existing failures are pre-existing (Open Q #3)
+- ✓ `docker compose up` brings full stack incl. agent; backend image rebuilt with langgraph; prompts shipped in image
+- ✓ HANDOFF.md updated; 3D reference commit `f010384`
 
 ---
 
 ## State of the Codebase
 
 **Backend:**
-- 32 new tests in `backend/tests/search/` (all passing)
-- `app/search/` module: 7 files, cleanly structured
-- `app/eval/query_eval.py` updated with `embed_events()` step
-- `app/main.py`: search router registered, CORS updated to allow POST
-- `alembic/versions/0004_embedding_dimension_fix.py`: applied (head revision)
-- `app/models/embeddings.py`: `EMBEDDING_DIM = 384`
-- `scripts/embed_events.py` and `scripts/run_search_eval.py` written (not yet in Docker image)
-- 111 events embedded in live `event_embeddings` table
+- `app/agent/` — 13 modules + 3 prompt files; mypy-strict clean; ruff clean.
+- `app/main.py` — `agent_router` registered.
+- `app/eval/agent_eval.py` + `scripts/run_agent_eval.py`.
+- `pyproject.toml` — `langgraph>=0.2.0`; `uv.lock` updated.
+- 38 agent tests in `backend/tests/agent/`.
+- Docker image rebuilt: langgraph imports, prompts present at `/app/app/agent/prompts/`, `/api/ask` live.
 
 **Frontend:**
-- 5 new/modified files: `Search.tsx`, `ResultCard.tsx`, `FilterPanel.tsx`, `api/search.ts`,
-  `types.ts` (extended), `App.tsx` (route added), `TopBar.tsx` (nav + shortcut), `useKeyboardNav.ts`
-- Not yet confirmed working in browser (no local Node environment in this session; Docker build
-  will include all changes since `backend/app/` and source files are volume-mounted or rebuilt)
+- `/ask` page + 3 components + `api/ask.ts`; types extended; nav + shortcut updated.
+- `ResultCard.tsx` unused-import fixed (unblocked the build).
+- Builds clean (`tsc -b && vite build`); image rebuilt; serves `/` and `/ask`.
 
-**Docs:**
-- 5 new docs: `0021`, `0022`, `semantic-search.md`, `phase-3d-readiness.md`,
-  `phase-3d-search-results.md` (with real numbers)
-- `3-minute-walkthrough.md` updated with search beat
-- `docs/README.md` updated
+**Docs:** agent-architecture, ADRs 0023–0025, phase-4a-readiness, eval results, demo beat, README.
 
-**Reference commit (3C baseline):** `a0be82e`
+**Reference commit (3D baseline):** `f010384`
 
 ---
 
 ## Next Subphase
 
-**Phase 4A — Agent Layer**. The search infrastructure is complete; the data pipeline is
-proven. Phase 4A adds: a query router that maps natural-language questions to either the
-four KQs (typed traversals) or `hybrid_search` (untyped retrieval), answer generation with
-grounded provenance, and a conversational interface. The `hybrid_search` function in
-`app/search/retriever.py` and the four KQ endpoint functions in `app/queries/` are the
-tools the agent will call.
-
-Technical requirements for Phase 4A to reuse:
-- `hybrid_search(query, k, filters, session, neo4j_driver)` — ready
-- `GET /api/queries/{kq}?{params}` — all four KQs live and tested
-- `GET /api/events/{id}` — provenance drilldown ready
-- `event_embeddings` populated (111 events, vector(384))
-- The `SearchResult.related_entity_ids` field enables pivot from retrieval to graph traversal
+**Phase 4B — Frontend polish + agent UX.** Candidate work: streaming synthesis (the biggest
+latency win — synthesis is already the isolated last node), conversation memory (a follow-up
+resolver node + memory channel), routing cache, and demo polish. The agent core
+(route → typed tool → synthesize → verify) is proven and should not need structural changes;
+4B is additive on top of it.

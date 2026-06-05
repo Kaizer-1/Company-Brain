@@ -3,7 +3,7 @@
  * Dense data row — no marketing cards, no drop shadows.
  */
 
-import { Badge, nodeTypeBadge } from '../ui/Badge';
+import { Badge } from '../ui/Badge';
 import type { SearchHit } from '../../types';
 
 interface ResultCardProps {

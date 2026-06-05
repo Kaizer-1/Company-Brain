@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 
 const NAV = [
+  { to: '/ask', label: 'ask', end: false },
   { to: '/', label: 'overview', end: true },
   { to: '/graph', label: 'graph', end: false },
   { to: '/queries', label: 'queries', end: false },
@@ -39,7 +40,7 @@ export function TopBar() {
 
       {/* Keyboard shortcut hint */}
       <span className="font-mono text-2xs text-txt-faint select-none hidden sm:block">
-        g h/g/q/s/a
+        g k/h/g/q/s/a
       </span>
     </header>
   );

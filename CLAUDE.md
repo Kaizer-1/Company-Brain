@@ -289,8 +289,8 @@ graph. Full rationale: [docs/design/query-engine.md](docs/design/query-engine.md
 > fragmented nodes from 2B's best-effort write path block the killer-query traversals. The
 > originally-planned 3A "multi-hop traversal" and "temporal queries" fold into **3B**. The
 > closed schema and the 4 killer queries are unchanged.
-| 4A | Agent Layer | Query router, graph-RAG fusion, answer generation with provenance | Pending |
-| 4B | Frontend | react-force-graph visualisation, demo polish, interview prep | Pending |
+| 4A | Agent Layer | Query router, typed-tool execution, answer generation with provenance verification | **Complete** |
+| 4B | Frontend | streaming, conversation memory, demo polish, interview prep | Pending |
 
 ---
 
@@ -396,6 +396,36 @@ misses documented in `docs/eval/phase-3d-search-results.md`.
 `/search` page with two-pane layout: filter controls (left) + ranked result cards (right).
 ResultCard has source drilldown via EventModal. `g s` keyboard shortcut. `search` nav link
 between `queries` and `audit` in TopBar.
+
+---
+
+## Agent Layer (LOCKED IN — Phase 4A)
+
+A LangGraph agent turns a natural-language question into a grounded answer with verified
+provenance. Full design: [docs/design/agent-architecture.md](docs/design/agent-architecture.md).
+ADR 0023 (typed tools not generated Cypher), 0024 (route-then-execute), 0025 (provenance
+verification loop). Module: `backend/app/agent/`. Eval: `docs/eval/phase-4a-agent-results.md`.
+
+- **Route-then-execute-then-verify state machine**: `classify_route` (one enum-constrained LLM
+  call) → one of six branches (kq1–kq4, `general_search`, `unknown`) → `synthesize_answer` (LLM,
+  grounded) → `verify_provenance` (pure Python) → retry (max 2) or END. Built directly on
+  LangGraph (no LangChain).
+- **Typed tools only** (ADR 0023): the agent calls the four KQ functions + `hybrid_search`, never
+  LLM-generated Cypher. No injection/parse surface; small enumerable, testable behaviour set.
+- **Provenance verification** (ADR 0025): every `[evt:UUID]` in the answer must be in the tool's
+  provenance; a fabricated citation triggers a strict-prompt retry, then a flagged best-effort.
+  No unflagged fabrication reaches the user.
+- **Read-only by design**: no side-effecting tools; out-of-scope/action questions route to
+  `unknown`. Routing failure falls back to `search`, never to a refusal.
+- **One model family, two roles**: `anthropic/claude-3.5-haiku` for routing + synthesis,
+  configurable in `app/agent/config.py`. Stateless per request (no multi-turn; streaming deferred).
+- **API**: `POST /api/ask` (`AskRequest{question, debug}` → `AskResponse{answer, citations[],
+  route, confidence, timings_ms, error, debug?}`); citations resolved server-side.
+- **Frontend**: `/ask` page (first nav item, `g k` shortcut); inline `[evt:UUID]` → clickable
+  superscripts → EventModal; numbered Sources; "Show agent trace" disclosure.
+- **Eval numbers (honest, 2026-06-05)**: route accuracy 1.000, refusal 1.000, citation overlap
+  0.608, first-try verification 0.864, mean cost $0.003/q. Mean latency 6645ms **missed** the 4s
+  target (two sequential LLM calls) — documented with mitigations.
 
 ---
 

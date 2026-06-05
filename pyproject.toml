@@ -15,6 +15,7 @@ dependencies = [
     "alembic>=1.14.0",
     "httpx>=0.28.0",  # async OpenRouter client (extraction pipeline, Phase 2B)
     "sentence-transformers>=3.0.0",  # entity resolution embeddings (Phase 3A); pulls PyTorch CPU (~300MB)
+    "langgraph>=0.2.0",  # agent state machine (Phase 4A); pulls langchain-core, no langchain
 ]
 
 [project.optional-dependencies]

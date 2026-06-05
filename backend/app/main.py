@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from app.agent.api_router import router as agent_router
 from app.api.audit import router as audit_router
 from app.api.events import router as events_router
 from app.api.graph import router as graph_router
@@ -137,3 +138,4 @@ app.include_router(graph_router)
 app.include_router(events_router)
 app.include_router(audit_router)
 app.include_router(search_router)
+app.include_router(agent_router)

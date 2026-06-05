@@ -41,6 +41,9 @@ ADRs record non-trivial design choices: what we picked, what we rejected, and wh
 | [decisions/0020-frontend-design-philosophy.md](decisions/0020-frontend-design-philosophy.md) | Software-tools aesthetic, custom primitives over shadcn, dark-mode default, anti-pattern list; why the modal AI-slop frontend undermines the backend work |
 | [decisions/0021-embedding-dimension-migration.md](decisions/0021-embedding-dimension-migration.md) | Phase 3D migration of event_embeddings from vector(1536) to vector(384); why bge-small not OpenAI; defensive row-count guard pattern for re-embedding migrations |
 | [decisions/0022-hybrid-search-blend-weights.md](decisions/0022-hybrid-search-blend-weights.md) | Linear blend 0.7/0.3 (vector + graph signal); why not LLM rerank for Phase 3D; graph_signal normalisation; tuning path and production upgrade to BM25 fusion |
+| [decisions/0023-typed-tools-not-generated-cypher.md](decisions/0023-typed-tools-not-generated-cypher.md) | Phase 4A: the agent calls five typed Python functions, never LLM-generated Cypher; injection/parse/wrong-traversal surface eliminated; enumerable testable behaviour; the "yes I could, here's why I didn't" defense |
+| [decisions/0024-route-then-execute-architecture.md](decisions/0024-route-then-execute-architecture.md) | Phase 4A: constrained route classifier then fixed branch then synthesis, vs an end-to-end tool-calling loop; per-stage testability, bounded cost/latency, route accuracy as one metric; tradeoff is no cross-tool chaining |
+| [decisions/0025-provenance-verification-loop.md](decisions/0025-provenance-verification-loop.md) | Phase 4A: verify-then-retry (max 2) Python check that every cited event id is in the tool's provenance; self-heals stray citations, flags persistent failures, never lets a fabricated citation through |
 
 ---
 
@@ -70,6 +73,7 @@ Long-form design documents. UX wireframes and visual artefacts arrive in Phase 4
 | [design/query-engine.md](design/query-engine.md) | The Phase-3B query engine: the four KQs restated with Cypher + unresolved-failure modes, the temporal model + `as_of`, Decision consolidation, the contradiction/Message pass, provenance shape, the edge-projection cleanup, performance, and the integration-eval methodology |
 | [design/frontend-architecture.md](design/frontend-architecture.md) | Phase-3C frontend architecture: tech stack rationale (Vite+React+TanStack Query+react-force-graph-2d), four-page structure, data-fetching strategy, styling conventions (design tokens, anti-patterns), nginx proxy pattern, production delta |
 | [design/semantic-search.md](design/semantic-search.md) | Phase-3D semantic search: bge-small-en-v1.5 + pgvector HNSW, 7-stage hybrid retrieval pipeline, linear blend rationale, module structure, eval methodology, production-scale changes |
+| [design/agent-architecture.md](design/agent-architecture.md) | Phase-4A agent: LangGraph route-then-execute-then-verify state machine, node-by-node walkthrough, typed-tools rationale, provenance verification loop, cost/latency, single-model choice, out-of-scope cuts, and the production scale path (caching, streaming, multi-turn, access control) |
 
 ---
 
@@ -83,6 +87,7 @@ Generated quality reports. Numbers are honest and reproducible from the determin
 | [eval/phase-3a-resolution-results.md](eval/phase-3a-resolution-results.md) | Entity-resolution eval vs `ALIAS_GROUPS` + `LOOK_ALIKE_PAIRS`: precision/recall/false-merge/missed-merge overall and per type, tier breakdown, correct/missed/false merge examples, cost, and a hand-written Discussion |
 | [eval/phase-3b-query-results.md](eval/phase-3b-query-results.md) | Killer-query integration eval: all four KQs **pass** on the live LLM-extracted graph (111 events, provenance valid); expected answers per KQ from `narrative.py`; hand-written Discussion on the ordering bug the run caught, per-query reliability, and extraction sensitivity |
 | [eval/phase-3d-search-results.md](eval/phase-3d-search-results.md) | Semantic search eval: 20 questions, Recall@10=0.942, MRR=0.910; warm latency ~149ms; 3 partial misses documented with failure-mode analysis |
+| [eval/phase-4a-agent-results.md](eval/phase-4a-agent-results.md) | Agent eval: 30 questions across five routes + refusals; route accuracy 1.000, refusal 1.000, citation overlap 0.608, first-try verification 0.864, mean cost $0.003/q; latency missed the 4s target (two sequential LLM calls) with an honest failure-mode breakdown incl. the one retry-exhausted question |
 
 ---
 
@@ -111,3 +116,4 @@ One doc per subphase. Contains Q&A pairs and key whiteboard concepts for that ph
 | [interview-prep/phase-3b-readiness.md](interview-prep/phase-3b-readiness.md) | 10 Q&A pairs + 5 whiteboard concepts: KQ1 walkthrough, the `status<>'merged'` filter + edge projection, `as_of` vs `datetime.now()`, Decision consolidation vs entity resolution, KQ3 complexity at scale, why the eval is end-to-end, tracing provenance to Postgres, KQ4 on the unresolved graph, missed-edge impact on KQ3 |
 | [interview-prep/phase-3c-readiness.md](interview-prep/phase-3c-readiness.md) | 10 Q&A pairs + 5 whiteboard concepts: react-force-graph vs D3-scratch, resolved/fragmented toggle mechanics, why the audit page, full provenance flow, scaling the graph view past 1000 nodes, dark-mode default rationale, KQ1 click-through walkthrough, non-optional provenance, audit pagination approach, what's next |
 | [interview-prep/phase-3d-readiness.md](interview-prep/phase-3d-readiness.md) | 10 Q&A pairs + 5 whiteboard concepts: local model choice, bge-small specifics, HNSW parameters, linear blend vs LLM rerank, graph signal value, filter/fanout interaction, placeholder table rationale, search vs KQs, production scale changes, ablation methodology |
+| [interview-prep/phase-4a-readiness.md](interview-prep/phase-4a-readiness.md) | 12 Q&A pairs + 6 whiteboard concepts: LangGraph vs LangChain, typed tools vs generated Cypher, provenance verification, the five-route enum, misclassification handling, cost-per-question, scaling to 10×, agent vs vanilla RAG, what's missing for production, the read-only safety boundary, the verify-then-retry loop, how-do-you-know-it-works |

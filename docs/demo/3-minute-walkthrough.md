@@ -99,6 +99,35 @@
 
 ---
 
+## Beat 3.5: The Agent — /ask (the headline moment)
+
+> "Everything so far used forms — I picked the query, I typed the decision id. The agent layer
+> removes that. Watch."
+
+- Click `/ask` (first nav item). Type, in plain English:
+  **"Who owns the service that depends on the system deprecated by D-0006?"** — hit ⌘↵.
+
+> "Same question as the killer query, but now I just asked it in English. Under the hood the
+> agent classified it — see the badge, 'KQ1 — Multi-hop ownership' — ran the typed traversal,
+> and wrote this answer. Every claim has a superscript citation."
+
+- Click a superscript number in the answer.
+
+> "That opens the exact source event the claim is grounded in — same provenance system as the
+> forms. The agent doesn't generate Cypher; it picks from five typed tools and then *verifies*
+> every citation against the graph before showing it to me. If it can't ground a claim, it
+> refuses rather than fabricates."
+
+- Click "Show agent trace".
+
+> "Here's the trace: the route it chose, its reasoning, and per-stage timings. Nothing is a
+> black box. Out-of-scope questions — 'what's the weather in Bangalore' — get an honest refusal,
+> never a hallucination. It's read-only by design."
+
+> Eval, if asked: route accuracy 1.0, zero fabricated citations reached the user, ~$0.003/question.
+
+---
+
 ## Beat 5: The Audit Trail (2:30–2:50)
 
 - Click `/audit`.
@@ -119,7 +148,8 @@
 - Return to `/`.
 
 > "Full stack: Neo4j, Postgres + pgvector, FastAPI, React. Entity resolution, killer-query
-> traversals, semantic search — all in one `docker compose up`. Happy to go deeper."
+> traversals, semantic search, and an agent that turns plain-English questions into grounded,
+> citation-verified answers — all in one `docker compose up`. Happy to go deeper."
 
 ---
 
@@ -130,3 +160,6 @@
 - For search: try "legacy-auth stale guide deprecated" or "event-bus Kafka async". Both return highly relevant results within 200ms.
 - If they ask why not RAG: KQ "Why RAG fails" notes on landing page + phase-3d-readiness.md Q8 has the 80-word answer.
 - If they ask about search eval: Recall@10=0.942, MRR=0.910. `docs/eval/phase-3d-search-results.md` has the numbers.
+- **Agent-focused interview**: lead with `/ask` (Beat 3.5) instead of `/queries` — the agent is the headline. The forms (`/queries`, `/search`) then read as "the typed tools underneath the agent."
+- If they ask about the agent eval: route accuracy 1.000, refusal correctness 1.000, first-try verification 0.864, mean cost $0.003/q; latency missed its 4s target (two sequential LLM calls) — `docs/eval/phase-4a-agent-results.md` has the honest breakdown.
+- If they ask "could the agent generate Cypher / take actions?": yes to both, deliberately excluded — ADR 0023 (typed tools) and the read-only boundary. `phase-4a-readiness.md` Q2/Q10.

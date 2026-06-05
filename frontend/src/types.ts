@@ -179,3 +179,45 @@ export interface EventDTO {
   ingested_at: string;
   content_hash: string;
 }
+
+// ── Agent (/ask) ──────────────────────────────────────────────────────────────
+
+export type AgentRoute = 'kq1' | 'kq2' | 'kq3' | 'kq4' | 'search' | 'unknown';
+export type AgentConfidence = 'high' | 'medium' | 'low';
+
+export interface AskRequest {
+  question: string;
+  debug?: boolean;
+}
+
+export interface Citation {
+  event_id: string;
+  source_kind: string;
+  source_ref: string;
+  snippet: string;
+}
+
+export interface AgentStateDump {
+  question: string;
+  route: AgentRoute;
+  route_reasoning: string;
+  tool_input: Record<string, unknown>;
+  available_event_ids: string[];
+  answer: string;
+  citations: string[];
+  verified: boolean;
+  retry_count: number;
+  error: string | null;
+  timings_ms: Record<string, number>;
+  cost_usd: number;
+}
+
+export interface AskResponse {
+  answer: string;
+  citations: Citation[];
+  route: AgentRoute;
+  confidence: AgentConfidence;
+  timings_ms: Record<string, number>;
+  error: string | null;
+  debug: AgentStateDump | null;
+}
