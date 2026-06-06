@@ -21,6 +21,7 @@ from app.agent.config import AgentConfig
 from app.agent.deps import AgentDeps
 from app.agent.graph import build_agent_graph
 from app.agent.schemas import AgentStateDump, AskResponse, Citation
+from app.agent.state import STRUCTURAL_ROUTES
 from app.db.repositories.events import EventRepository
 from app.extraction.client import OpenRouterClient
 
@@ -119,12 +120,18 @@ async def run_agent(
         total_ms=timings["total"],
     )
 
+    # Structural routes carry their raw tool output to the client for dedicated rendering;
+    # kq*/search/unknown render from the inline answer + citation chain, so it is omitted.
+    route = final.get("route", "unknown")
+    tool_output = final.get("tool_output") if route in STRUCTURAL_ROUTES else None
+
     return AskResponse(
         answer=final.get("answer", ""),
         citations=citations,
-        route=final.get("route", "unknown"),
+        route=route,
         confidence=final.get("confidence", "low"),
         timings_ms=timings,
         error=final.get("error"),
+        tool_output=tool_output,
         debug=_to_dump(final) if debug else None,
     )

@@ -15,6 +15,10 @@ const ROUTE_LABELS: Record<string, string> = {
   kq3: 'KQ3 — Blast radius',
   kq4: 'KQ4 — Change tracking',
   search: 'Semantic search',
+  get_entity: 'Entity lookup',
+  neighbors: 'Typed neighbors',
+  enumerate: 'Enumeration',
+  aggregate: 'Aggregation',
   unknown: 'Out of scope',
 };
 

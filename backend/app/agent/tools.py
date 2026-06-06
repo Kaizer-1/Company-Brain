@@ -21,11 +21,20 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from pydantic import ValidationError
 
 from app.queries import (
+    AggregateInput,
+    EnumerateInput,
+    GetEntityInput,
+    NeighborsInput,
+    aggregate_by_type,
     compute_blast_radius,
+    enumerate_by_type,
     find_chain_owner,
     find_contradictions,
+    get_entity,
+    neighbors_of_entity,
     track_changes,
 )
 from app.search.retriever import hybrid_search
@@ -134,6 +143,98 @@ async def kq4_change(state: AgentState, *, deps: AgentDeps) -> dict[str, object]
     )
     log.info("tool_kq4_done", target=target, changes=len(result.value.changes))
     return _query_result_to_state(state, result, node_name="kq4_change", t0=t0)
+
+
+# ---------------------------------------------------------------------------
+# Structural tool nodes (Phase 4C)
+# ---------------------------------------------------------------------------
+#
+# Each follows the KQ pattern: validate the classifier's ``tool_input`` against the tool's
+# ``*Input`` schema, call the typed function in ``app.queries``, and write the result. On a
+# validation failure the node falls back to ``general_search`` (same rule as the KQ nodes —
+# a company question degrades to grounded retrieval, never to a refusal). The structural
+# results may legitimately carry *no* source_event_ids (e.g. an aggregate count); that is
+# expected and handled downstream by the verification skip (ADR 0030), so these nodes always
+# flow into synthesis rather than empty_answer when the tool succeeded.
+
+
+async def get_entity_tool(state: AgentState, *, deps: AgentDeps) -> dict[str, object]:
+    """get_entity — single-node property lookup. Falls back to search on bad tool_input."""
+    t0 = time.monotonic()
+    try:
+        params = GetEntityInput.model_validate(state.get("tool_input", {}))
+    except ValidationError as exc:
+        return await _fallback_search(state, deps, missing=f"get_entity input ({_first_err(exc)})")
+    result = await get_entity(deps.neo4j_driver, params)
+    log.info("tool_get_entity_done", entity_id=params.entity_id, node_type=result.value.node_type)
+    return _structural_to_state(state, result, node_name="get_entity_tool", t0=t0)
+
+
+async def neighbors_tool(state: AgentState, *, deps: AgentDeps) -> dict[str, object]:
+    """neighbors_of_entity — typed one-hop traversal. Falls back to search on bad tool_input."""
+    t0 = time.monotonic()
+    try:
+        params = NeighborsInput.model_validate(state.get("tool_input", {}))
+    except ValidationError as exc:
+        return await _fallback_search(state, deps, missing=f"neighbors input ({_first_err(exc)})")
+    result = await neighbors_of_entity(deps.neo4j_driver, params)
+    log.info("tool_neighbors_done", entity_id=params.entity_id, found=result.value.total_count)
+    return _structural_to_state(state, result, node_name="neighbors_tool", t0=t0)
+
+
+async def enumerate_tool(state: AgentState, *, deps: AgentDeps) -> dict[str, object]:
+    """enumerate_by_type — filtered listing of a node type. Falls back to search on bad input."""
+    t0 = time.monotonic()
+    try:
+        params = EnumerateInput.model_validate(state.get("tool_input", {}))
+    except ValidationError as exc:
+        return await _fallback_search(state, deps, missing=f"enumerate input ({_first_err(exc)})")
+    result = await enumerate_by_type(deps.neo4j_driver, params)
+    log.info(
+        "tool_enumerate_done",
+        node_type=params.node_type,
+        total=result.value.total_count,
+        returned=result.value.returned_count,
+    )
+    return _structural_to_state(state, result, node_name="enumerate_tool", t0=t0)
+
+
+async def aggregate_tool(state: AgentState, *, deps: AgentDeps) -> dict[str, object]:
+    """aggregate_by_type — count / group a node type. Falls back to search on bad tool_input."""
+    t0 = time.monotonic()
+    try:
+        params = AggregateInput.model_validate(state.get("tool_input", {}))
+    except ValidationError as exc:
+        return await _fallback_search(state, deps, missing=f"aggregate input ({_first_err(exc)})")
+    result = await aggregate_by_type(deps.neo4j_driver, params)
+    log.info("tool_aggregate_done", node_type=params.node_type, total=result.value.total)
+    return _structural_to_state(state, result, node_name="aggregate_tool", t0=t0)
+
+
+def _first_err(exc: ValidationError) -> str:
+    """A short, human-readable summary of the first validation error for the trace."""
+    errors = exc.errors()
+    if not errors:
+        return "invalid input"
+    first = errors[0]
+    loc = ".".join(str(p) for p in first.get("loc", ())) or "input"
+    return f"{loc}: {first.get('msg', 'invalid')}"
+
+
+def _structural_to_state(
+    state: AgentState, result: QueryResult[Any], *, node_name: str, t0: float
+) -> dict[str, object]:
+    """Serialise a structural ``QueryResult`` into the tool-output state slice.
+
+    Identical shape to ``_query_result_to_state``; kept distinct so the intent (a structural
+    tool, whose answer may be grounded in graph structure rather than events) is explicit at
+    the call site and so the two can diverge without coupling.
+    """
+    return {
+        "tool_output": result.model_dump(mode="json"),
+        "available_event_ids": list(result.provenance.all_event_ids),
+        "timings_ms": _timed(state, node_name, t0),
+    }
 
 
 # ---------------------------------------------------------------------------

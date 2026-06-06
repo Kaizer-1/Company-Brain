@@ -182,8 +182,86 @@ export interface EventDTO {
 
 // ── Agent (/ask) ──────────────────────────────────────────────────────────────
 
-export type AgentRoute = 'kq1' | 'kq2' | 'kq3' | 'kq4' | 'search' | 'unknown';
+export type AgentRoute =
+  | 'kq1'
+  | 'kq2'
+  | 'kq3'
+  | 'kq4'
+  | 'search'
+  | 'get_entity'
+  | 'neighbors'
+  | 'enumerate'
+  | 'aggregate'
+  | 'unknown';
 export type AgentConfidence = 'high' | 'medium' | 'low';
+
+// ── Structural tool results (Phase 4C) ─────────────────────────────────────────
+// The backend carries the raw structural tool output as `tool_output` on AskResponse /
+// the `complete` stream event. It is a QueryResult envelope: { value, provenance }.
+
+export interface EntityResult {
+  entity_id: string;
+  node_type: string; // matched label, or "not_found"
+  properties: Record<string, unknown>;
+  outgoing_edges: Record<string, number>;
+  incoming_edges: Record<string, number>;
+  source_event_ids: string[];
+}
+
+export interface NeighborItem {
+  neighbor_id: string;
+  neighbor_name: string;
+  neighbor_type: string;
+  edge_type: string;
+  outgoing: boolean;
+  source_event_id: string | null;
+}
+
+export interface NeighborsResult {
+  entity_id: string;
+  total_count: number;
+  neighbors: NeighborItem[];
+}
+
+export interface EnumeratedNode {
+  id: string;
+  name: string;
+  status: string;
+  extra_fields: Record<string, unknown>;
+  source_event_ids: string[];
+}
+
+export interface EnumerateResult {
+  node_type: string;
+  total_count: number;
+  returned_count: number;
+  nodes: EnumeratedNode[];
+  filters_applied: Record<string, unknown>;
+}
+
+export interface AggregateGroup {
+  group_name: string;
+  group_type: string;
+  count: number;
+}
+
+export interface AggregateResult {
+  node_type: string;
+  total: number;
+  groups: AggregateGroup[] | null;
+}
+
+export type StructuralResult =
+  | EntityResult
+  | NeighborsResult
+  | EnumerateResult
+  | AggregateResult;
+
+// The QueryResult envelope the backend serialises into tool_output.
+export interface ToolOutput {
+  value: StructuralResult;
+  provenance?: QueryProvenance;
+}
 
 export interface AskRequest {
   question: string;
@@ -219,6 +297,7 @@ export interface AskResponse {
   confidence: AgentConfidence;
   timings_ms: Record<string, number>;
   error: string | null;
+  tool_output?: ToolOutput | null; // structural routes only (Phase 4C)
   debug: AgentStateDump | null;
 }
 
@@ -289,6 +368,7 @@ export interface StreamEventComplete {
   confidence: AgentConfidence;
   timings_ms: Record<string, number>;
   error: string | null;
+  tool_output?: ToolOutput | null; // structural routes only (Phase 4C)
   debug: AgentStateDump | null;
 }
 

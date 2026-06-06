@@ -26,15 +26,19 @@ from typing import TYPE_CHECKING
 from langgraph.graph import END, START, StateGraph
 
 from app.agent.router import classify_route
-from app.agent.state import AgentState, RouteLiteral
+from app.agent.state import STRUCTURAL_ROUTES, AgentState, RouteLiteral
 from app.agent.synthesis import synthesize_answer
 from app.agent.tools import (
+    aggregate_tool,
     empty_answer,
+    enumerate_tool,
     general_search,
+    get_entity_tool,
     kq1_owner,
     kq2_contra,
     kq3_blast,
     kq4_change,
+    neighbors_tool,
     unknown,
 )
 from app.agent.verification import route_after_verify, verify_provenance
@@ -57,11 +61,25 @@ _ROUTE_TO_NODE: dict[RouteLiteral, str] = {
     "kq3": "kq3_blast",
     "kq4": "kq4_change",
     "search": "general_search",
+    "get_entity": "get_entity_tool",
+    "neighbors": "neighbors_tool",
+    "enumerate": "enumerate_tool",
+    "aggregate": "aggregate_tool",
     "unknown": "unknown",
 }
 
-# The tool nodes that produce citable output and therefore flow into synthesis.
-_SYNTHESIS_TOOLS = ("kq1_owner", "kq2_contra", "kq3_blast", "kq4_change", "general_search")
+# The tool nodes that produce answerable output and therefore flow into synthesis.
+_SYNTHESIS_TOOLS = (
+    "kq1_owner",
+    "kq2_contra",
+    "kq3_blast",
+    "kq4_change",
+    "general_search",
+    "get_entity_tool",
+    "neighbors_tool",
+    "enumerate_tool",
+    "aggregate_tool",
+)
 
 
 def _select_tool(state: AgentState) -> str:
@@ -70,8 +88,20 @@ def _select_tool(state: AgentState) -> str:
 
 
 def _route_after_tool(state: AgentState) -> str:
-    """Conditional edge out of a KQ/search node: synthesise only if there's something to cite."""
-    return "synthesize_answer" if state.get("available_event_ids") else "empty_answer"
+    """Conditional edge out of a tool node: synthesise if there is an answerable result.
+
+    Normally that means citable events were found. A structural tool (Phase 4C) is an
+    exception: it can produce a meaningful answer (a count, an empty list, a not-found) with
+    no source events. We detect a genuine structural result by its ``QueryResult`` shape
+    (a ``value`` key — search output has ``hits`` instead, so a fallback-to-search empty
+    result still correctly routes to ``empty_answer``).
+    """
+    if state.get("available_event_ids"):
+        return "synthesize_answer"
+    out = state.get("tool_output")
+    if state.get("route") in STRUCTURAL_ROUTES and isinstance(out, dict) and "value" in out:
+        return "synthesize_answer"
+    return "empty_answer"
 
 
 def build_agent_graph(deps: AgentDeps) -> AgentGraph:
@@ -85,6 +115,10 @@ def build_agent_graph(deps: AgentDeps) -> AgentGraph:
     builder.add_node("kq3_blast", partial(kq3_blast, deps=deps))
     builder.add_node("kq4_change", partial(kq4_change, deps=deps))
     builder.add_node("general_search", partial(general_search, deps=deps))
+    builder.add_node("get_entity_tool", partial(get_entity_tool, deps=deps))
+    builder.add_node("neighbors_tool", partial(neighbors_tool, deps=deps))
+    builder.add_node("enumerate_tool", partial(enumerate_tool, deps=deps))
+    builder.add_node("aggregate_tool", partial(aggregate_tool, deps=deps))
     builder.add_node("unknown", partial(unknown, deps=deps))
     builder.add_node("empty_answer", partial(empty_answer, deps=deps))
     builder.add_node("synthesize_answer", partial(synthesize_answer, deps=deps))

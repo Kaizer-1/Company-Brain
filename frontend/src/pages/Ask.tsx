@@ -15,6 +15,7 @@ import { AnswerView } from '../components/ask/AnswerView';
 import { CitationList } from '../components/ask/CitationList';
 import { AgentTrace } from '../components/ask/AgentTrace';
 import { StreamProgress } from '../components/ask/StreamProgress';
+import { StructuralResultView } from '../components/ask/results';
 import { EventModal } from '../components/graph/EventModal';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
@@ -30,6 +31,10 @@ const ROUTE_LABELS: Record<string, string> = {
   kq3: 'KQ3 — Blast radius',
   kq4: 'KQ4 — Change tracking',
   search: 'Semantic search',
+  get_entity: 'Entity lookup',
+  neighbors: 'Typed neighbors',
+  enumerate: 'Enumeration',
+  aggregate: 'Aggregation',
   unknown: 'Out of scope',
 };
 
@@ -202,6 +207,8 @@ export function Ask() {
               onCiteClick={setSelectedEventId}
             />
 
+            <StructuralResultView route={streamComplete.route} toolOutput={streamComplete.tool_output} />
+
             <CitationList citations={streamComplete.citations} onSelect={setSelectedEventId} />
 
             {streamComplete.debug && <AgentTrace debug={streamComplete.debug} />}
@@ -238,6 +245,8 @@ export function Ask() {
               citations={jsonResultAsResponse.citations}
               onCiteClick={setSelectedEventId}
             />
+
+            <StructuralResultView route={jsonResultAsResponse.route} toolOutput={jsonResultAsResponse.tool_output} />
 
             <CitationList citations={jsonResultAsResponse.citations} onSelect={setSelectedEventId} />
 

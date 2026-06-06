@@ -131,7 +131,24 @@
 > black box. Out-of-scope questions — 'what's the weather in Bangalore' — get an honest refusal,
 > never a hallucination. It's read-only by design."
 
-> Eval, if asked: route accuracy 1.0, zero fabricated citations reached the user, ~$0.003/question. Streaming cuts perceived wait from 6.5s to first-token at ~2.5s.
+*Now show the structural tools (Phase 4C) — the everyday questions search couldn't answer.*
+
+> "But the agent isn't just the four big queries. Watch a plain question search used to get
+> wrong." Type: **"List the names of all the employees in this company."** — ⌘↵.
+
+> "Route badge: 'Enumeration'. It walks the graph and returns **all 13 people** — not the
+> seven that happened to appear in matching messages, which is what semantic search gave us.
+> Below the answer it renders the full list as a card." *(point to the EnumerateResult list)*
+
+> "And it counts." Type: **"Who's on the Payments team?"** then
+> **"How many active decisions are there?"** — "'Typed neighbors' returns the two members;
+> 'Aggregation' returns the count. The count has no citation — there's no single event behind
+> a count, so the agent honestly shows it grounded in the graph's structure, not a fabricated
+> source. That distinction is enforced in code."
+
+> Eval, if asked: route accuracy 1.0 across all 42 questions (incl. the four new structural
+> tools), zero fabricated citations reached the user, ~$0.005/question. Streaming cuts
+> perceived wait to first-token at ~2.5s.
 
 ---
 

@@ -23,6 +23,7 @@ from app.agent.deps import AgentDeps
 from app.agent.router import classify_route
 from app.agent.runner import _resolve_citations, run_agent  # noqa: PLC2701 – shared private
 from app.agent.schemas import AskRequest, AskResponse
+from app.agent.state import STRUCTURAL_ROUTES
 from app.agent.streaming import (
     EVT_COMPLETE,
     EVT_ERROR,
@@ -38,11 +39,15 @@ from app.agent.streaming import (
 )
 from app.agent.synthesis import astream_synthesize
 from app.agent.tools import (
+    aggregate_tool,
+    enumerate_tool,
     general_search,
+    get_entity_tool,
     kq1_owner,
     kq2_contra,
     kq3_blast,
     kq4_change,
+    neighbors_tool,
     unknown,
 )
 from app.agent.verification import verify_provenance
@@ -63,8 +68,24 @@ _ROUTE_TO_TOOL: dict[str, Callable[..., object]] = {
     "kq3": kq3_blast,
     "kq4": kq4_change,
     "search": general_search,
+    "get_entity": get_entity_tool,
+    "neighbors": neighbors_tool,
+    "enumerate": enumerate_tool,
+    "aggregate": aggregate_tool,
     "unknown": unknown,
 }
+
+
+def _structural_payload(state: AgentState) -> dict[str, object] | None:
+    """Return the raw structural tool output for the complete event, or None.
+
+    Mirrors the runner: only the structural routes carry their ``QueryResult`` dict to the
+    client so the dedicated renderers can draw the entity/neighbours/list/aggregate cards.
+    """
+    out = state.get("tool_output")
+    if state.get("route") in STRUCTURAL_ROUTES and isinstance(out, dict):
+        return out
+    return None
 
 
 def _make_on_token(q: asyncio.Queue[str | None]) -> Callable[[str], Awaitable[None]]:
@@ -155,7 +176,16 @@ async def ask_stream(request: Request, body: AskRequest) -> StreamingResponse:
             })
 
             # ── Terminals: unknown or empty result ────────────────────────────
-            if route == "unknown" or not available_ids:
+            # A genuine structural result (QueryResult shape) with no events is NOT a
+            # terminal — it flows into synthesis (e.g. an aggregate count). Detect it by the
+            # ``value`` key so a fallback-to-search empty result still terminates here.
+            tool_out = state.get("tool_output")
+            is_structural_answer = (
+                route in STRUCTURAL_ROUTES
+                and isinstance(tool_out, dict)
+                and "value" in tool_out
+            )
+            if route == "unknown" or (not available_ids and not is_structural_answer):
                 citations = await _resolve_citations(session_factory, state.get("citations", []))
                 timings = dict(state.get("timings_ms", {}))
                 timings["total"] = round((time.monotonic() - t0) * 1000, 1)
@@ -166,6 +196,7 @@ async def ask_stream(request: Request, body: AskRequest) -> StreamingResponse:
                     "confidence": state.get("confidence", "low"),
                     "timings_ms": timings,
                     "error": state.get("error"),
+                    "tool_output": _structural_payload(state),
                     "debug": None,
                 })
                 return
@@ -226,6 +257,7 @@ async def ask_stream(request: Request, body: AskRequest) -> StreamingResponse:
                 "confidence": state.get("confidence", "low"),
                 "timings_ms": timings,
                 "error": state.get("error"),
+                "tool_output": _structural_payload(state),
                 "debug": None,
             })
 

@@ -21,6 +21,30 @@ from pydantic import BaseModel, Field
 # must be importable at runtime (not under TYPE_CHECKING) for model building to succeed.
 from app.agent.state import RouteLiteral  # noqa: TC001
 
+# Phase 4C structural-tool result types are defined next to their query functions (mirroring
+# the four KQ result models, which live in their query modules). They are re-exported here so
+# the agent layer has a single import surface for the shapes that cross the API boundary.
+from app.queries import (  # noqa: TC001
+    AggregateResult,
+    EnumerateResult,
+    GetEntityResult,
+    NeighborsResult,
+)
+
+__all__ = [
+    "AgentStateDump",
+    "AggregateResult",
+    "AnswerWithCitations",
+    "AskRequest",
+    "AskResponse",
+    "Citation",
+    "EnumerateResult",
+    "GetEntityResult",
+    "NeighborsResult",
+    "RouteDecision",
+    "StructuralAnswer",
+]
+
 # ---------------------------------------------------------------------------
 # LLM-boundary models
 # ---------------------------------------------------------------------------
@@ -49,6 +73,23 @@ class AnswerWithCitations(BaseModel):
 
     answer: str = Field(min_length=20, max_length=2000)
     citations: list[str] = Field(min_length=1)
+    confidence: Literal["high", "medium", "low"]
+
+
+class StructuralAnswer(BaseModel):
+    """Synthesis output for a structural tool that returned no citable source events (Phase 4C).
+
+    Aggregations (and the occasional event-less enumerate/neighbors/get_entity) answer from the
+    graph's *structure*, not from a specific Postgres event, so there is nothing to cite.
+    ``citations`` is therefore optional here — the grounding contract is preserved a different
+    way: the deterministic typed tool produced the structural fact, and ``verify_provenance``
+    skips the inline-citation check for this case (ADR 0030). Used only when the route is
+    structural AND ``available_event_ids`` is empty; every other path still uses the strict
+    ``AnswerWithCitations``.
+    """
+
+    answer: str = Field(min_length=20, max_length=2000)
+    citations: list[str] = Field(default_factory=list)
     confidence: Literal["high", "medium", "low"]
 
 
@@ -99,4 +140,9 @@ class AskResponse(BaseModel):
     confidence: Literal["high", "medium", "low"]
     timings_ms: dict[str, float]
     error: str | None = None
+    # Raw structured tool output (Phase 4C): carried for the structural routes so the
+    # frontend can render the dedicated EntityResult/NeighborsResult/EnumerateResult/
+    # AggregateResult cards beneath the NL answer. ``None`` for routes whose output the UI
+    # does not render structurally (kq*/search use the inline answer + citation chain).
+    tool_output: dict[str, Any] | None = None
     debug: AgentStateDump | None = None

@@ -53,6 +53,10 @@ class AgentConfig:
     router_prompt_path: Path = _PROMPT_DIR / "router.txt"
     synthesis_prompt_path: Path = _PROMPT_DIR / "synthesis.txt"
     synthesis_strict_prompt_path: Path = _PROMPT_DIR / "synthesis_strict.txt"
+    # Phase 4C: used when a structural tool returns no citable events (e.g. an aggregate
+    # count). Instructs the model to answer from the structural data without [evt:UUID]
+    # citations; verification skips the citation check for this case (ADR 0030).
+    synthesis_structural_prompt_path: Path = _PROMPT_DIR / "synthesis_structural.txt"
 
     def load_prompt(self, path: Path) -> str:
         """Read a prompt template from disk. Kept tiny + uncached: prompts are small and

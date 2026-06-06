@@ -23,6 +23,12 @@ GROUNDING RULES (non-negotiable)
    (service/system/decision ids) may be used verbatim.
 6. Pick confidence honestly: "high" if the tool output directly and fully answers the
    question; "medium" if it partially answers; "low" if it barely touches it.
+7. Some tools return STRUCTURAL data — a list of entities, an entity's properties, or its
+   neighbours — where each item carries its own source_event_ids. When you state such a
+   fact (e.g. "the team owns payments-api"), cite one of the event ids attached to that item
+   from the AVAILABLE EVENT IDS set. Report counts and totals faithfully: if the output says
+   total_count is 13 but only 13 were returned, say "all 13"; if more exist than returned,
+   say you are listing the first N of M.
 
 QUESTION
 --------

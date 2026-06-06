@@ -22,14 +22,16 @@ import time
 from typing import TYPE_CHECKING
 
 import structlog
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.agent.llm import AgentLLMError, complete_to_model
-from app.agent.schemas import AnswerWithCitations
+from app.agent.schemas import AnswerWithCitations, StructuralAnswer
+from app.agent.state import STRUCTURAL_ROUTES
 from app.extraction.client import CompletionResult, OpenRouterError
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+    from pathlib import Path
 
     from app.agent.deps import AgentDeps
     from app.agent.state import AgentState
@@ -58,6 +60,34 @@ def _strip_fences(text: str) -> str:
     return stripped.strip()
 
 
+def is_structural_no_events(state: AgentState) -> bool:
+    """True when the route is structural AND the tool produced no citable source events.
+
+    This is the case (e.g. an aggregate count) where the answer is grounded in the graph's
+    structure rather than a specific event, so synthesis uses the structural prompt + the
+    optional-citation schema and verification skips the inline-citation check (ADR 0030).
+    """
+    return state.get("route") in STRUCTURAL_ROUTES and not state.get("available_event_ids")
+
+
+def _synthesis_plan(state: AgentState, deps: AgentDeps) -> tuple[Path, type[BaseModel]]:
+    """Pick the (prompt path, output schema) for this synthesis attempt.
+
+    Structural-no-events uses the citation-free prompt + ``StructuralAnswer``; a retry uses the
+    strict prompt; otherwise the standard prompt. All three schemas expose ``answer`` /
+    ``citations`` / ``confidence`` so the caller handles them uniformly.
+    """
+    if is_structural_no_events(state):
+        return deps.config.synthesis_structural_prompt_path, StructuralAnswer
+    retrying = state.get("retry_count", 0) > 0
+    path = (
+        deps.config.synthesis_strict_prompt_path
+        if retrying
+        else deps.config.synthesis_prompt_path
+    )
+    return path, AnswerWithCitations
+
+
 def build_synthesis_messages(template: str, state: AgentState) -> list[dict[str, str]]:
     """Render a synthesis prompt with the question, tool output, and legal event ids."""
     tool_output = json.dumps(state.get("tool_output"), indent=2, default=str)
@@ -70,8 +100,14 @@ def build_synthesis_messages(template: str, state: AgentState) -> list[dict[str,
     return [{"role": "user", "content": rendered}]
 
 
-def _parse_synthesis_json(full_text: str) -> dict[str, object]:
-    """Fence-strip, parse, and validate accumulated synthesis text. Returns a state-slice dict."""
+def _parse_synthesis_json(
+    full_text: str, schema: type[BaseModel] = AnswerWithCitations
+) -> dict[str, object]:
+    """Fence-strip, parse, and validate accumulated synthesis text. Returns a state-slice dict.
+
+    ``schema`` is ``AnswerWithCitations`` for the normal/strict paths and ``StructuralAnswer``
+    for the structural-no-events path; both expose answer/citations/confidence.
+    """
     candidate = _strip_fences(full_text)
     if not candidate:
         raise AgentLLMError("empty synthesis response", stage="json")
@@ -80,12 +116,16 @@ def _parse_synthesis_json(full_text: str) -> dict[str, object]:
     except json.JSONDecodeError as exc:
         raise AgentLLMError(f"synthesis response was not valid JSON: {exc}", stage="json") from exc
     try:
-        result = AnswerWithCitations.model_validate(data)
+        result = schema.model_validate(data)
     except ValidationError as exc:
         raise AgentLLMError(
-            f"synthesis response did not match AnswerWithCitations: {exc}", stage="schema"
+            f"synthesis response did not match {schema.__name__}: {exc}", stage="schema"
         ) from exc
-    return {"answer": result.answer, "citations": result.citations, "confidence": result.confidence}
+    return {
+        "answer": result.answer,  # type: ignore[attr-defined]
+        "citations": result.citations,  # type: ignore[attr-defined]
+        "confidence": result.confidence,  # type: ignore[attr-defined]
+    }
 
 
 async def synthesize_answer(state: AgentState, *, deps: AgentDeps) -> dict[str, object]:
@@ -97,9 +137,7 @@ async def synthesize_answer(state: AgentState, *, deps: AgentDeps) -> dict[str, 
     """
     t0 = time.monotonic()
     retrying = state.get("retry_count", 0) > 0
-    prompt_path = (
-        deps.config.synthesis_strict_prompt_path if retrying else deps.config.synthesis_prompt_path
-    )
+    prompt_path, schema = _synthesis_plan(state, deps)
     template = deps.config.load_prompt(prompt_path)
     messages = build_synthesis_messages(template, state)
 
@@ -109,14 +147,14 @@ async def synthesize_answer(state: AgentState, *, deps: AgentDeps) -> dict[str, 
             deps.client,
             model=deps.config.synthesis_model,
             messages=messages,
-            schema=AnswerWithCitations,
+            schema=schema,
             temperature=deps.config.synthesis_temperature,
             max_tokens=deps.config.synthesis_max_tokens,
         )
         cost += call_cost
-        answer = result.answer
-        citations = result.citations
-        confidence = result.confidence
+        answer = result.answer  # type: ignore[attr-defined]
+        citations = result.citations  # type: ignore[attr-defined]
+        confidence = result.confidence  # type: ignore[attr-defined]
     except AgentLLMError as exc:
         log.warning("synthesis_failed", stage=exc.stage, retrying=retrying, error=str(exc)[:200])
         answer = _SYNTHESIS_FAILED_ANSWER
@@ -149,9 +187,7 @@ async def astream_synthesize(
     """
     t0 = time.monotonic()
     retrying = state.get("retry_count", 0) > 0
-    prompt_path = (
-        deps.config.synthesis_strict_prompt_path if retrying else deps.config.synthesis_prompt_path
-    )
+    prompt_path, schema = _synthesis_plan(state, deps)
     template = deps.config.load_prompt(prompt_path)
     messages = build_synthesis_messages(template, state)
 
@@ -173,7 +209,7 @@ async def astream_synthesize(
         if completion_results:
             cost += completion_results[0].cost_usd
 
-        parsed = _parse_synthesis_json(full_text)
+        parsed = _parse_synthesis_json(full_text, schema)
         answer = str(parsed["answer"])
         citations = list(parsed["citations"])  # type: ignore[arg-type]
         confidence = str(parsed["confidence"])

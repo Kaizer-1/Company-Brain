@@ -10,12 +10,43 @@ from __future__ import annotations
 
 from typing import Any, Literal, TypedDict
 
-# The five execution paths plus the terminal "unknown". Kept as a Literal (not a Python
+# The ten execution paths plus the terminal "unknown". Kept as a Literal (not a Python
 # enum) so it serialises cleanly and the router's Pydantic model can constrain to it
-# directly. KQ routes map 1:1 to the four killer queries; "search" is general retrieval.
-RouteLiteral = Literal["kq1", "kq2", "kq3", "kq4", "search", "unknown"]
+# directly. KQ routes map 1:1 to the four killer queries; "search" is general retrieval;
+# the four structural routes (Phase 4C) are graph-native lookups/enumeration/aggregation
+# the KQs + search cannot answer correctly (see docs/design/structural-tools.md).
+RouteLiteral = Literal[
+    "kq1",
+    "kq2",
+    "kq3",
+    "kq4",
+    "search",
+    "get_entity",  # Phase 4C — single-node property lookup
+    "neighbors",  # Phase 4C — typed one-hop traversal
+    "enumerate",  # Phase 4C — list nodes of a type with filters
+    "aggregate",  # Phase 4C — count / group nodes of a type
+    "unknown",
+]
 
-ROUTE_VALUES: tuple[RouteLiteral, ...] = ("kq1", "kq2", "kq3", "kq4", "search", "unknown")
+ROUTE_VALUES: tuple[RouteLiteral, ...] = (
+    "kq1",
+    "kq2",
+    "kq3",
+    "kq4",
+    "search",
+    "get_entity",
+    "neighbors",
+    "enumerate",
+    "aggregate",
+    "unknown",
+)
+
+# The four structural routes added in Phase 4C. Verification skips the citation check for
+# these when the tool returned no source_event_ids (ADR 0030) — the answer is grounded in
+# graph structure, not in a specific event.
+STRUCTURAL_ROUTES: frozenset[str] = frozenset(
+    {"get_entity", "neighbors", "enumerate", "aggregate"}
+)
 
 
 class AgentState(TypedDict, total=False):

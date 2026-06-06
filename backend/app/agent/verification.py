@@ -25,7 +25,7 @@ import structlog
 # AgentState must be importable at runtime: LangGraph calls get_type_hints() on the
 # conditional-edge function ``route_after_verify`` at graph-compile time, which evaluates its
 # ``state: AgentState`` annotation. Under TYPE_CHECKING it would raise NameError at compile.
-from app.agent.state import AgentState  # noqa: TC001
+from app.agent.state import STRUCTURAL_ROUTES, AgentState  # noqa: TC001
 
 if TYPE_CHECKING:
     from app.agent.deps import AgentDeps
@@ -53,6 +53,19 @@ async def verify_provenance(state: AgentState, *, deps: AgentDeps) -> dict[str, 
     answer = state.get("answer", "")
     available = set(state.get("available_event_ids", []))
     inline_ids = _extract_inline_ids(answer)
+
+    # ADR 0030: a structural tool that returned no citable events (e.g. an aggregate count)
+    # answers from the graph's structure, not from a Postgres event — there is nothing to
+    # cite. The grounding contract still holds: the deterministic typed tool produced the
+    # fact. So we skip the inline-citation check and accept the answer with empty citations.
+    # Any inline [evt:] the model emitted anyway is dropped (nothing was available to cite).
+    if state.get("route") in STRUCTURAL_ROUTES and not available:
+        timings = {
+            **state.get("timings_ms", {}),
+            "verify_provenance": round((time.monotonic() - t0) * 1000, 1),
+        }
+        log.info("provenance_skipped_structural", route=state.get("route"))
+        return {"verified": True, "citations": [], "error": None, "timings_ms": timings}
 
     has_citation = len(inline_ids) > 0
     all_grounded = all(eid in available for eid in inline_ids)
