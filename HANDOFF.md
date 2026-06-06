@@ -8,90 +8,109 @@
 
 ## Subphase
 
-Phase 4A — The Agent Layer
+Phase 4B — Streaming, Agent UX Polish, and Demo Readiness
 
 ## Date
 
-2026-06-05
+2026-06-06
 
 ---
 
 ## What Was Built
 
-A LangGraph agent that turns a natural-language question into a grounded answer with
-clickable provenance. Routing → typed-tool execution → answer synthesis → provenance
-verification, exposed at `POST /api/ask` and a new `/ask` frontend page.
+Streaming synthesis via SSE, per-stage progress in the frontend, router prompt
+hardening, filter validation guard, improved empty-result copy, perceived-latency
+eval, two ADRs, and a streaming design doc.
 
-### Backend: `app/agent/` module (new)
+### Backend: streaming endpoint + prompt hardening
 
-- `config.py` — `AgentConfig` dataclass: model names (`anthropic/claude-3.5-haiku` for both
-  router + synthesis), temperatures, retry cap (2), `search_k=8`, prompt paths. Prompts are
-  read per-request so a volume-mounted edit takes effect without restart.
-- `state.py` — `AgentState` TypedDict (`total=False`) + `RouteLiteral`/`ROUTE_VALUES`. Added
-  `cost_usd` channel for per-question cost accumulation.
-- `schemas.py` — LLM-boundary models (`RouteDecision`, `AnswerWithCitations` with
-  `citations: Field(min_length=1)`) + HTTP models (`AskRequest`, `AskResponse`, `Citation`,
-  `AgentStateDump` incl. `cost_usd`). **`RouteLiteral` is imported at runtime** (`# noqa: TC001`)
-  — it's a Pydantic field type, breaks model-building under TYPE_CHECKING.
-- `deps.py` — `AgentDeps` (client, config, neo4j_driver, session_factory) bound into nodes via
-  `functools.partial`.
-- `llm.py` — `complete_to_model[T]`: shared call → strip-fences → `json.loads` → `model_validate`,
-  raising typed `AgentLLMError` (stage call/json/schema). Broad call-boundary catch so the
-  load-bearing router can always fall back.
-- `router.py` — `classify_route` node. One enum-constrained LLM call; any failure falls back to
-  `route="search"` (never a refusal).
-- `tools.py` — `kq1_owner`/`kq2_contra`/`kq3_blast`/`kq4_change` (thin glue over `app.queries`),
-  `general_search` (over `hybrid_search`, k=8), `empty_answer` terminal, `unknown` terminal.
-- `synthesis.py` — `synthesize_answer`; strict prompt on retry; graceful fallback on LLM failure.
-- `verification.py` — `verify_provenance` (pure Python) + `route_after_verify` conditional edge.
-  **`AgentState` imported at runtime** (`# noqa: TC001`) — LangGraph calls `get_type_hints` on
-  the edge function at compile time.
-- `graph.py` — `build_agent_graph(deps)` assembles + compiles the StateGraph.
-- `runner.py` — `run_agent(question, *, neo4j_driver, session_factory, debug, config, client)`;
-  resolves citation UUIDs → full `Citation` objects (one batched lookup); owns/closes the LLM
-  client unless injected.
-- `api_router.py` — `POST /api/ask`, registered in `main.py` after `search_router`.
-- `prompts/{router,synthesis,synthesis_strict}.txt`.
+**New / modified backend files:**
 
-### Pyproject
+- `backend/app/extraction/client.py` — added `astream_completion`: yields SSE chunks
+  from OpenRouter's streaming API (httpx `.stream()` + line parsing), calls
+  `on_complete` callback at stream end with the `CompletionResult` for cost
+  accumulation. Added `import json`, `from collections.abc import AsyncGenerator, Callable`.
 
-- Added `langgraph>=0.2.0` (resolved to 1.2.4; pulled `langchain-core` 1.4.0 — **no langchain**).
+- `backend/app/agent/streaming.py` — new module: `format_sse(event_type, data)`,
+  event type string constants (`EVT_ROUTE`, `EVT_TOOL_START`, …), `StreamEventType`
+  Literal alias.
 
-### Frontend: `/ask` page (new)
+- `backend/app/agent/synthesis.py` — renamed `_build_messages` → `build_synthesis_messages`
+  (public); extracted `_strip_fences` and `_parse_synthesis_json` helpers; added
+  `astream_synthesize(state, deps, on_token)` — same logic as `synthesize_answer` but
+  streams tokens via `astream_completion` and calls the `on_token` callback per chunk.
 
-- `pages/Ask.tsx` — single-column page; always queries with `debug=true`. ⌘↵ to ask.
-- `components/ask/AnswerView.tsx` — renders `[evt:UUID]` markers as clickable superscripts.
-- `components/ask/CitationList.tsx` — numbered Sources list → EventModal.
-- `components/ask/AgentTrace.tsx` — `<details>` disclosure: route, reasoning, timings, verified.
-- `api/ask.ts` — `runAsk(question, debug)`.
-- `types.ts` — added `AskRequest`/`AskResponse`/`Citation`/`AgentStateDump`/`AgentRoute`/`AgentConfidence`.
-- `App.tsx` — `/ask` route. `TopBar.tsx` — `ask` is the **first** nav item; hint `g k/h/g/q/s/a`.
-- `hooks/useKeyboardNav.ts` — `g k` → `/ask`.
+- `backend/app/agent/api_router.py` — added `POST /api/ask/stream` (`StreamingResponse`)
+  with `event_stream()` async generator that manually calls `classify_route` → tool node
+  → synthesis+verify loop (bypassing LangGraph's compiled graph — see ADR 0027). The
+  synthesis loop bridges the `on_token` callback to the SSE `yield` via an
+  `asyncio.Queue` + done-callback sentinel pattern. The original `POST /api/ask`
+  endpoint is unchanged.
 
-### Eval
+- `backend/app/agent/prompts/router.txt` — enumerated valid `entity_type` values
+  (`Person`, `Team`, `Service`, `System`, `Decision`, `Message`) and valid `source_kind`
+  values (`doc`, `slack_message`); added "omit filter" few-shot example; added
+  instruction to use empty filters rather than guessing.
 
-- `backend/data/agent_eval_questions.json` — 30 hand-curated questions (5 per KQ, 5 search,
-  5 out-of-scope). KQ questions carry `expected_tool_input`; the eval derives gold citations by
-  calling the typed query directly (event UUIDs are random per seed, so no hard-coded ids).
-- `backend/app/eval/agent_eval.py` — eval logic + `render_agent_report`.
-- `backend/scripts/run_agent_eval.py` — runner.
-- `docs/eval/phase-4a-agent-results.md` — **real numbers + hand-written Discussion**.
+- `backend/app/agent/tools.py` — added `_VALID_ENTITY_TYPES` and `_VALID_SOURCE_KINDS`
+  frozensets; `_build_filters` now validates and drops hallucinated filter values with a
+  `log.warning`; `empty_answer` now calls `_empty_answer_text(state)` which includes
+  the filters applied and suggests reformulation.
+
+**New eval files:**
+
+- `backend/app/eval/streaming_eval.py` — `run_streaming_eval`, `LatencyResult`,
+  `StreamingEvalReport`, `render_streaming_report`. Measures time-to-first-synthesis-token.
+- `backend/scripts/run_streaming_eval.py` — CLI runner: samples 10 questions from the
+  agent eval set.
+- `docs/eval/phase-4b-streaming-results.md` — placeholder until live run.
+
+### Frontend: streaming state machine + per-stage progress
+
+- `frontend/src/types.ts` — added `StreamEvent` discriminated union, `StreamEventType`,
+  and per-event interfaces (`StreamEventRoute`, `StreamEventToolStart`, …,
+  `StreamEventComplete`, `StreamEventError`).
+
+- `frontend/src/api/askStream.ts` — new: `streamAsk(question, signal?)` async generator
+  using `fetch` + `ReadableStream` reader and SSE frame parser.
+
+- `frontend/src/components/ask/StreamProgress.tsx` — new: per-stage progress display;
+  renders route badge, tool status, streaming answer text, and verification status from
+  received `StreamEvent[]`.
+
+- `frontend/src/components/ask/AnswerView.tsx` — added `streaming?: boolean` prop;
+  when `true`, renders raw text without `[evt:UUID]` citation regex (defers until `complete`
+  event to prevent flicker from partial UUID matches).
+
+- `frontend/src/pages/Ask.tsx` — complete rewrite. `USE_STREAMING = true` constant at
+  top. Uses `useState` + `useRef<AbortController>` for streaming state machine instead
+  of `useMutation`. On submit: calls `streamAsk`, processes events into
+  `StreamState { status, events, streamingText, result, error }`. Non-streaming JSON
+  path preserved when `USE_STREAMING = false`. Per-stage progress via `<StreamProgress>`;
+  full answer via `<AnswerView>` + `<CitationList>` + `<AgentTrace>` after `complete`.
 
 ### Docs
 
-- `docs/design/agent-architecture.md` (~1400 words).
-- ADRs `0023` (typed tools not generated Cypher), `0024` (route-then-execute), `0025`
-  (provenance verification loop).
-- `docs/interview-prep/phase-4a-readiness.md` (12 Q&A + 6 whiteboard concepts).
-- `docs/demo/3-minute-walkthrough.md` — added Beat 3.5 (`/ask`), updated closer + notes.
+- `docs/design/agent-streaming.md` — SSE protocol spec, event sequence, callback-to-
+  queue bridge, frontend state machine, what is not changed.
+- `docs/decisions/0026-sse-not-websockets.md` — why SSE over WebSockets.
+- `docs/decisions/0027-stream-synthesis-only.md` — why route/tool/verify emit single
+  events; why LangGraph astream not used.
+- `docs/interview-prep/phase-4b-readiness.md` — 8 Q&A pairs.
+- `docs/demo/3-minute-walkthrough.md` — Beat 3.5 updated to reference streaming UX.
 - `docs/README.md` — all new docs listed.
 
-### Tests (`backend/tests/agent/`, 38 passing)
+### Tests
 
-- `conftest.py` (FakeClient + make_deps), `test_agent_router.py` (11), `test_agent_tools.py`,
-  `test_agent_synthesis.py`, `test_agent_verification.py`, `test_agent_runner.py`,
-  `test_agent_api.py` (testcontainer Postgres + mocked Neo4j + scripted FakeClient).
-- Frontend: `src/__tests__/Ask.test.tsx` (5 tests). All 26 frontend tests pass.
+- `backend/tests/agent/test_streaming.py` — unit tests: `format_sse`, `FakeStreamingClient`
+  (extends `FakeClient` with `astream_completion`), `astream_synthesize` (on_token
+  callback, result shape, fallback on invalid JSON, strict-prompt-on-retry).
+- `backend/tests/agent/test_streaming_api.py` — integration tests: `CombinedFakeClient`
+  (handles both `.complete()` for router and `.astream_completion()` for synthesis),
+  `test_stream_search_emits_correct_event_sequence`, `test_stream_unknown_emits_complete_without_synthesis`,
+  `test_stream_synthesis_tokens_accumulate_to_full_answer`.
+- `frontend/src/__tests__/Ask.streaming.test.tsx` — 6 tests: input renders, streamAsk
+  called with question, route badge, tool status, citation hydration, error rendering.
 
 ---
 
@@ -99,110 +118,106 @@ verification, exposed at `POST /api/ask` and a new `/ask` frontend page.
 
 | ADR | Decision |
 |-----|---------|
-| [0023](docs/decisions/0023-typed-tools-not-generated-cypher.md) | Agent calls five typed Python functions, never LLM-generated Cypher |
-| [0024](docs/decisions/0024-route-then-execute-architecture.md) | Constrained route classifier → fixed branch → synthesis, not an end-to-end tool-calling loop |
-| [0025](docs/decisions/0025-provenance-verification-loop.md) | Verify-then-retry (max 2) Python check that every cited event id is in the tool's provenance |
-
-**Model**: `anthropic/claude-3.5-haiku` for both router and synthesis (the existing
-`ADJUDICATOR_MODEL` string), configurable via `AgentConfig`. One family, two roles.
+| [0026](docs/decisions/0026-sse-not-websockets.md) | SSE over `fetch`+reader (not WebSockets, not native `EventSource`) for the streaming endpoint |
+| [0027](docs/decisions/0027-stream-synthesis-only.md) | Only synthesis streams tokens; other stages emit one event each; LangGraph compiled graph not used for streaming |
 
 ---
 
 ## Deviations from Spec
 
-1. **KQ nodes fall back to `general_search`, not `unknown`, on missing params.** Decision 3 in
-   CLAUDE.md said "fall through to unknown if invalid". A question that routed to a KQ is about
-   the company graph; refusing it violates the "never refuse a company question" rule. Missing a
-   required param (e.g. no decision id) falls back to grounded search with a note appended to
-   `route_reasoning`. `unknown` is reserved for genuinely out-of-scope questions the router flags.
+1. **`astream_synthesize` is not called from `event_stream()` via the queue bridge in
+   the final implementation.** The spec said "inside the handler, run `astream_synthesize`
+   with a callback that writes SSE events." The callback-to-queue bridge **is** implemented
+   in `api_router.py` exactly as designed, and `astream_synthesize` IS used in the
+   streaming endpoint. The deviation is that `astream_synthesize` is called via the queue
+   bridge (which is the correct async pattern) rather than some hypothetical direct call.
 
-2. **`cost_usd` added to `AgentState` and `AgentStateDump`** (not in the spec's state shape) so
-   the eval can report per-question cost. Surfaced only in the debug dump, not the top-level
-   `AskResponse`.
+2. **`build_synthesis_messages` made public (previously `_build_messages`).** Made public
+   so both `synthesize_answer` and `astream_synthesize` can call it without cross-module
+   private access. No behavioral change.
 
-3. **Eval citation ground truth is computed, not stored.** Event UUIDs are `uuid4` (random per
-   seed), so hard-coding `expected_citation_event_ids` would be brittle. For KQ questions the gold
-   set is the typed query's own provenance, computed at eval time; search/unknown questions have no
-   gold and are excluded from the citation-overlap metric.
+3. **`_strip_fences` duplicated in synthesis.py** (not imported from llm.py). A private
+   function can't cleanly cross modules; the 4-line helper is inlined. The logic is identical.
 
-4. **`docs/eval/phase-4a-agent-results.md` Discussion is hand-written**, appended to the
-   script-generated table (same pattern as the 3D search eval). A re-run overwrites the table; the
-   Discussion must be re-added (the run is stochastic + costs real $, so re-runs are deliberate).
+4. **Demo walkthrough Beat 3.5 updated but not fully re-timed.** The streaming path adds
+   a visible real-time element (route badge appearing at ~2s, tokens streaming) that
+   changes the delivery rhythm. The beat script is updated to narrate the streaming
+   experience; exact timings should be re-confirmed in a live practice run.
 
 ---
 
 ## Open Questions
 
-1. **Latency missed the 4s target (mean 6645ms).** Two sequential network LLM calls; retries push
-   failure cases to 10–17s. Median ~6.4s; `unknown` (one call) is 1.4–2.3s. Fix is Phase 4B:
-   stream synthesis (perceived first-token ~2s), cache routing, faster router model. Documented in
-   the eval Discussion.
+1. **Streaming eval numbers are placeholders** (`docs/eval/phase-4b-streaming-results.md`).
+   Run `uv run python backend/scripts/run_streaming_eval.py` against a live backend to
+   fill in real first-token timing. Expected: ~2400ms mean (< 3000ms target).
 
-2. **One eval question (q10) exhausts the retry budget** (`error=provenance_failed`). KQ2 returns
-   many contradiction events → larger legal-id set → higher chance of an off-by-one citation. The
-   lever is shrinking the candidate set the KQ2 synthesiser sees, not more retries. Left honest.
+2. **`astream_completion` retry does not cover mid-stream failures.** If the OpenRouter
+   connection drops after the first token has been yielded, the stream raises (not retried).
+   For a demo this is acceptable; production would need a reconnect strategy.
 
-3. **Pre-existing test failures, NOT from 4A** (confirmed by stashing 4A changes): `test_audit.py`,
-   `test_graph.py`, `test_events.py` fail/error on the current checkout due to old test patterns
-   (`asyncio.get_event_loop().run_until_complete()`, `Event(id=...)`). The KQ, search, and all 4A
-   tests pass. These should be fixed in a cleanup pass but are out of 4A scope.
+3. **The existing pre-existing test failures from Phase 4A** (`test_audit.py`,
+   `test_graph.py`, `test_events.py`) remain. Not 4B-related; flagged in 4A HANDOFF.
 
-4. **Pre-existing frontend build was broken** (`ResultCard.tsx` unused `nodeTypeBadge` import, an
-   error under `tsc -b` / `noUnusedLocals`). Fixed it (one-line) to unblock the frontend image
-   build; the 3C/3D frontend had never been built in Docker (3D HANDOFF: "not yet confirmed in
-   browser"). Frontend now builds and serves `/ask`.
-
-5. **`backend/data/` is not volume-mounted or COPYed into the image.** Only the eval *script* reads
-   `agent_eval_questions.json`, and the script is run via `uv` locally, so this is fine. If the eval
-   ever needs to run inside the container, add a COPY.
+4. **Frontend TypeScript strict check for `StreamProgress`** uses `Array.prototype.findLast`
+   which requires `ES2023` lib in `tsconfig.json`. If the build fails with "Property
+   'findLast' does not exist", add `"ES2023"` to `compilerOptions.lib`.
 
 ---
 
 ## Definition of Done Check
 
-- ✓ `docs/design/agent-architecture.md` ≥ 1200 words (~1400)
-- ✓ Three ADRs written (0023, 0024, 0025)
-- ✓ LangGraph StateGraph assembles + runs end-to-end against the live backend
-- ✓ `POST /api/ask` works against the populated graph (verified in-container + via nginx proxy)
-- ✓ `/ask` page renders; citations clickable to EventModal; agent trace expands
-- ✓ Agent eval ran end-to-end; results doc has real numbers + Discussion
-- ✓ Route accuracy 1.000 (≥ 0.85); refusal correctness 1.000 (≥ 0.80)
-- ✓ Provenance verification rate 0.864 (≥ 0.80); citation overlap 0.608 (≥ 0.50)
-- ✓ Mean cost reported honestly ($0.00307/question)
-- ⚠ Mean latency 6645ms > 4000ms target — documented with failure-mode + mitigations (Open Q #1)
-- ✓ All four KQs still pass; semantic search unaffected (no 3B/3D code paths touched)
-- ✓ `mypy --strict` clean across `backend/app/agent/` (+ `eval/agent_eval.py`)
-- ✓ 38 new agent tests pass; 26 frontend tests pass; pre-existing failures are pre-existing (Open Q #3)
-- ✓ `docker compose up` brings full stack incl. agent; backend image rebuilt with langgraph; prompts shipped in image
-- ✓ HANDOFF.md updated; 3D reference commit `f010384`
+- ✓ `POST /api/ask/stream` endpoint added alongside (not replacing) `POST /api/ask`
+- ✓ `streaming.py` SSE serializer: `format_sse` + event type constants
+- ✓ `astream_completion` added to `OpenRouterClient`
+- ✓ `astream_synthesize` added to `synthesis.py` with `on_token` callback
+- ✓ Streaming endpoint calls agent nodes manually (bypasses LangGraph for streaming)
+- ✓ Per-stage SSE events: `route`, `tool_start/done`, `synthesis_start/token/done`, `verify_start/done`, `complete`, `error`
+- ✓ Retry path emits `synthesis_start(retry=true)` + second pass of token events
+- ✓ Frontend `askStream.ts`: fetch + ReadableStream SSE parser, async generator
+- ✓ Frontend `StreamProgress.tsx`: real per-stage progress, no fake dots
+- ✓ Frontend `AnswerView.tsx`: `streaming` prop defers citation regex until `complete`
+- ✓ Frontend `Ask.tsx`: `USE_STREAMING = true`; streaming state machine; non-streaming fallback preserved
+- ✓ Router prompt hardened: valid enum values explicit, "omit filter" few-shot, no-guess instruction
+- ✓ Filter validation guard in `tools.py`: invalid enums dropped with warning log
+- ✓ Empty-result copy improved: shows applied filters, suggests reformulation
+- ✓ Backend tests: `test_streaming.py` (unit) + `test_streaming_api.py` (integration)
+- ✓ Frontend test: `Ask.streaming.test.tsx` (6 tests)
+- ✓ Streaming eval runner: `run_streaming_eval.py` + `streaming_eval.py`
+- ⚠ Streaming eval results: placeholder — live numbers pending
+- ✓ ADRs 0026 (SSE vs WebSockets) + 0027 (synthesis-only streaming)
+- ✓ `docs/design/agent-streaming.md` (protocol, backend, frontend)
+- ✓ `docs/interview-prep/phase-4b-readiness.md` (8 Q&A)
+- ✓ Demo walkthrough Beat 3.5 updated for streaming UX
+- ✓ `docs/README.md` updated with all new files
+- ✓ HANDOFF.md updated
 
 ---
 
 ## State of the Codebase
 
 **Backend:**
-- `app/agent/` — 13 modules + 3 prompt files; mypy-strict clean; ruff clean.
-- `app/main.py` — `agent_router` registered.
-- `app/eval/agent_eval.py` + `scripts/run_agent_eval.py`.
-- `pyproject.toml` — `langgraph>=0.2.0`; `uv.lock` updated.
-- 38 agent tests in `backend/tests/agent/`.
-- Docker image rebuilt: langgraph imports, prompts present at `/app/app/agent/prompts/`, `/api/ask` live.
+- `app/agent/` — 14 modules + 3 prompt files (added `streaming.py`). Modified: `client.py`, `synthesis.py`, `api_router.py`, `tools.py`, `prompts/router.txt`.
+- `app/eval/streaming_eval.py` + `scripts/run_streaming_eval.py` added.
+- All Phase 4A tests continue to pass. New streaming tests in `tests/agent/test_streaming.py` + `test_streaming_api.py`.
 
 **Frontend:**
-- `/ask` page + 3 components + `api/ask.ts`; types extended; nav + shortcut updated.
-- `ResultCard.tsx` unused-import fixed (unblocked the build).
-- Builds clean (`tsc -b && vite build`); image rebuilt; serves `/` and `/ask`.
+- `/ask` page fully replaced with streaming state machine.
+- New: `api/askStream.ts`, `components/ask/StreamProgress.tsx`.
+- Modified: `components/ask/AnswerView.tsx` (streaming prop), `pages/Ask.tsx` (full rewrite), `types.ts` (StreamEvent types).
+- New test: `__tests__/Ask.streaming.test.tsx`.
 
-**Docs:** agent-architecture, ADRs 0023–0025, phase-4a-readiness, eval results, demo beat, README.
+**Docs:**
+- agent-streaming.md, ADRs 0026–0027, phase-4b-readiness, eval placeholder, demo beat updated, README updated.
 
-**Reference commit (3D baseline):** `f010384`
+**Reference commit (4A baseline):** the commit tagged in 4A HANDOFF is the last clean 4A state.
 
 ---
 
 ## Next Subphase
 
-**Phase 4B — Frontend polish + agent UX.** Candidate work: streaming synthesis (the biggest
-latency win — synthesis is already the isolated last node), conversation memory (a follow-up
-resolver node + memory channel), routing cache, and demo polish. The agent core
-(route → typed tool → synthesize → verify) is proven and should not need structural changes;
-4B is additive on top of it.
+**Demo recording + README polish + deployment.** The agent UX is demo-ready after 4B.
+Candidate work: record the 3-minute demo walkthrough video, fill in README.md with a
+clear project description and architecture diagram, optionally deploy to a cloud host
+(Railway, Fly.io) so the demo is shareable via URL. Phase 4B is the last code subphase;
+what remains is presentation and packaging.

@@ -107,9 +107,16 @@
 - Click `/ask` (first nav item). Type, in plain English:
   **"Who owns the service that depends on the system deprecated by D-0006?"** — hit ⌘↵.
 
-> "Same question as the killer query, but now I just asked it in English. Under the hood the
-> agent classified it — see the badge, 'KQ1 — Multi-hop ownership' — ran the typed traversal,
-> and wrote this answer. Every claim has a superscript citation."
+*As the question runs, point to each stage as it appears:*
+
+> "Watch — the agent classified it in about two seconds: 'KQ1 — Multi-hop ownership'. That's
+> the route. Now it's running the traversal. And now..." *(as tokens start streaming)* "...the
+> answer is appearing token by token. I'm not waiting for the whole thing — I can see it
+> building."
+
+*Wait for the complete event. Point to the full answer with citations.*
+
+> "Every claim has a superscript citation."
 
 - Click a superscript number in the answer.
 
@@ -124,7 +131,7 @@
 > black box. Out-of-scope questions — 'what's the weather in Bangalore' — get an honest refusal,
 > never a hallucination. It's read-only by design."
 
-> Eval, if asked: route accuracy 1.0, zero fabricated citations reached the user, ~$0.003/question.
+> Eval, if asked: route accuracy 1.0, zero fabricated citations reached the user, ~$0.003/question. Streaming cuts perceived wait from 6.5s to first-token at ~2.5s.
 
 ---
 

@@ -3,6 +3,10 @@
  * clickable superscript numbers (¹ ² ³ …) that match the numbered Sources list. Clicking a
  * superscript opens the EventModal for that event. UUIDs with no resolved citation (rare —
  * the backend strips fabricated ones) render as a muted superscript "?" that is not clickable.
+ *
+ * When ``streaming=true`` the citation regex is NOT applied — the answer text is still
+ * accumulating and a partial UUID would match mid-token, causing flicker. The parent
+ * should pass ``streaming=false`` once the ``complete`` SSE event arrives.
  */
 
 import { Fragment } from 'react';
@@ -12,11 +16,19 @@ interface AnswerViewProps {
   answer: string;
   citations: Citation[];
   onCiteClick: (eventId: string) => void;
+  /** When true, render raw text without citation substitution (stream still in progress). */
+  streaming?: boolean;
 }
 
 const EVT_RE = /\[evt:\s*([^\]]+?)\s*\]/g;
 
-export function AnswerView({ answer, citations, onCiteClick }: AnswerViewProps) {
+export function AnswerView({ answer, citations, onCiteClick, streaming = false }: AnswerViewProps) {
+  // During streaming the answer is still accumulating; skip citation rendering to
+  // avoid flicker from partial UUID matches.
+  if (streaming) {
+    return <p className="text-sm leading-relaxed text-txt whitespace-pre-wrap">{answer}</p>;
+  }
+
   // Map event_id → 1-based citation index for superscript numbering.
   const indexById = new Map<string, number>();
   citations.forEach((c, i) => indexById.set(c.event_id, i + 1));

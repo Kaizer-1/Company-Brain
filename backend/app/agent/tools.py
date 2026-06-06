@@ -46,6 +46,13 @@ _UNKNOWN_ANSWER = (
     "with the data I have."
 )
 
+# Closed sets that mirror the graph schema (CLAUDE.md) and SourceType enum. Router-provided
+# filter values outside these sets are hallucinated; we drop them with a warning.
+_VALID_ENTITY_TYPES: frozenset[str] = frozenset(
+    {"Person", "Team", "Service", "System", "Decision", "Message"}
+)
+_VALID_SOURCE_KINDS: frozenset[str] = frozenset({"doc", "slack_message"})
+
 
 def _timed(state: AgentState, name: str, t0: float) -> dict[str, float]:
     """Merge this node's elapsed time into the running timings map."""
@@ -135,11 +142,35 @@ async def kq4_change(state: AgentState, *, deps: AgentDeps) -> dict[str, object]
 
 
 def _build_filters(tool_input: dict[str, Any]) -> SearchFilters | None:
-    """Build SearchFilters from any filter hints the classifier extracted."""
+    """Build SearchFilters from router-provided hints, dropping any hallucinated enum values.
+
+    The router prompt enumerates valid values but models occasionally invent others (Phase
+    4A post-mortem). Values outside the known enum sets are silently discarded here rather
+    than propagating to the search layer where they would silently exclude valid results.
+    """
     source_kind = tool_input.get("source_kind")
     entity_type = tool_input.get("entity_type")
-    sk = source_kind if isinstance(source_kind, list) and source_kind else None
-    et = entity_type if isinstance(entity_type, list) and entity_type else None
+
+    sk_raw = source_kind if isinstance(source_kind, list) else None
+    et_raw = entity_type if isinstance(entity_type, list) else None
+
+    sk: list[str] | None = None
+    et: list[str] | None = None
+
+    if sk_raw is not None:
+        sk = [v for v in sk_raw if isinstance(v, str) and v in _VALID_SOURCE_KINDS]
+        invalid_sk = [v for v in sk_raw if v not in _VALID_SOURCE_KINDS]
+        if invalid_sk:
+            log.warning("filter_invalid_source_kind", dropped=invalid_sk, kept=sk)
+        sk = sk or None  # collapse empty list to None
+
+    if et_raw is not None:
+        et = [v for v in et_raw if isinstance(v, str) and v in _VALID_ENTITY_TYPES]
+        invalid_et = [v for v in et_raw if v not in _VALID_ENTITY_TYPES]
+        if invalid_et:
+            log.warning("filter_invalid_entity_type", dropped=invalid_et, kept=et)
+        et = et or None
+
     if sk is None and et is None:
         return None
     return SearchFilters(source_kind=sk, entity_type=et, after=None, before=None)
@@ -177,21 +208,36 @@ async def _fallback_search(
     return out
 
 
+def _empty_answer_text(state: AgentState) -> str:
+    """Compose a helpful empty-result message that names the filters that were applied."""
+    tool_input = state.get("tool_input", {})
+    filter_parts: list[str] = []
+    et = tool_input.get("entity_type")
+    sk = tool_input.get("source_kind")
+    if isinstance(et, list) and et:
+        filter_parts.append(f"entity_type={','.join(et)}")
+    if isinstance(sk, list) and sk:
+        filter_parts.append(f"source_kind={','.join(sk)}")
+    filter_note = f" (filters applied: {'; '.join(filter_parts)})" if filter_parts else ""
+    return (
+        f"I couldn't find specific information matching that question{filter_note}. "
+        "You might get more results by rephrasing without specific filters, or by "
+        "trying one of the four predefined queries on the Queries page."
+    )
+
+
 async def empty_answer(state: AgentState, *, deps: AgentDeps) -> dict[str, object]:
     """Terminal for a tool that ran successfully but found nothing citable.
 
     A KQ or search can legitimately return zero results (e.g. no contradictions in the
     window). With no event ids there is nothing to cite, so synthesis is skipped and we
-    state the absence honestly. ``verified=True`` — an empty result is a correct answer,
+    state the absence helpfully. ``verified=True`` — an empty result is a correct answer,
     not a provenance failure.
     """
     t0 = time.monotonic()
     log.info("tool_empty_result", route=state.get("route"))
     return {
-        "answer": (
-            "I queried the graph but found no matching records for that question. "
-            "There may be no relevant data in the corpus, or the entity named may not exist."
-        ),
+        "answer": _empty_answer_text(state),
         "citations": [],
         "confidence": "low",
         "verified": True,

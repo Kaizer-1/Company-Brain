@@ -221,3 +221,91 @@ export interface AskResponse {
   error: string | null;
   debug: AgentStateDump | null;
 }
+
+// ── Streaming (/ask/stream) ───────────────────────────────────────────────────
+
+export type StreamEventType =
+  | 'route'
+  | 'tool_start'
+  | 'tool_done'
+  | 'synthesis_start'
+  | 'synthesis_token'
+  | 'synthesis_done'
+  | 'verify_start'
+  | 'verify_done'
+  | 'complete'
+  | 'error';
+
+export interface StreamEventRoute {
+  type: 'route';
+  route: AgentRoute;
+  reasoning: string;
+  tool_input: Record<string, unknown>;
+}
+
+export interface StreamEventToolStart {
+  type: 'tool_start';
+  tool: string;
+  params: Record<string, unknown>;
+}
+
+export interface StreamEventToolDone {
+  type: 'tool_done';
+  tool_output_summary: string;
+  timings_ms: Record<string, number>;
+}
+
+export interface StreamEventSynthesisStart {
+  type: 'synthesis_start';
+  retry: boolean;
+}
+
+export interface StreamEventSynthesisToken {
+  type: 'synthesis_token';
+  text: string;
+}
+
+export interface StreamEventSynthesisDone {
+  type: 'synthesis_done';
+  answer_final: string;
+  citations_raw: string[];
+}
+
+export interface StreamEventVerifyStart {
+  type: 'verify_start';
+}
+
+export interface StreamEventVerifyDone {
+  type: 'verify_done';
+  verified: boolean;
+  retry_count: number;
+}
+
+export interface StreamEventComplete {
+  type: 'complete';
+  answer: string;
+  citations: Citation[];
+  route: AgentRoute;
+  confidence: AgentConfidence;
+  timings_ms: Record<string, number>;
+  error: string | null;
+  debug: AgentStateDump | null;
+}
+
+export interface StreamEventError {
+  type: 'error';
+  error: string;
+  stage: string;
+}
+
+export type StreamEvent =
+  | StreamEventRoute
+  | StreamEventToolStart
+  | StreamEventToolDone
+  | StreamEventSynthesisStart
+  | StreamEventSynthesisToken
+  | StreamEventSynthesisDone
+  | StreamEventVerifyStart
+  | StreamEventVerifyDone
+  | StreamEventComplete
+  | StreamEventError;

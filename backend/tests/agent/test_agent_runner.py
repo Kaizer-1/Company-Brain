@@ -161,5 +161,5 @@ async def test_empty_results_skip_synthesis(monkeypatch: pytest.MonkeyPatch) -> 
     )
 
     assert resp.citations == []
-    assert "no matching records" in resp.answer
+    assert "couldn't find" in resp.answer  # updated empty-result copy (Phase 4B)
     assert len(client.calls) == 1  # synthesis never invoked

@@ -18,12 +18,17 @@ Responsibilities kept here and nowhere else:
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import httpx
 import structlog
 
 from app.config import settings
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator, Callable
 
 log = structlog.get_logger(__name__)
 
@@ -176,6 +181,118 @@ class OpenRouterClient:
             sleep_seconds=delay,
         )
         await asyncio.sleep(delay)
+
+    async def astream_completion(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        model: str,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        on_complete: Callable[[CompletionResult], None] | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream a chat completion, yielding text tokens as they arrive.
+
+        Retries 429/503 before the stream starts (not mid-stream — a partial retry
+        would replay already-yielded tokens). ``on_complete`` is called once at stream
+        end with the full ``CompletionResult`` so callers can accumulate per-request
+        cost. A structlog ``openrouter_completion`` event is also emitted at end.
+        """
+        if not self._api_key:
+            raise OpenRouterError(
+                "OPENROUTER_API_KEY is not set; cannot call the API. "
+                "Set it in .env (see .env.example)."
+            )
+
+        body: dict[str, object] = {
+            "model": model,
+            "messages": messages,
+            "stream": True,
+            "temperature": (
+                temperature if temperature is not None else settings.extraction_temperature
+            ),
+            "max_tokens": (
+                max_tokens if max_tokens is not None else settings.extraction_max_tokens
+            ),
+            "usage": {"include": True},
+        }
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/company-brain",
+            "X-Title": "Company Brain extraction",
+        }
+        url = f"{self._base_url}/chat/completions"
+
+        prompt_tokens = 0
+        completion_tokens = 0
+        cost = 0.0
+
+        last_error: Exception | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                async with self._client.stream("POST", url, json=body, headers=headers) as resp:
+                    if resp.status_code in _RETRY_STATUS and attempt < _MAX_RETRIES:
+                        await self._backoff(attempt, model=model, reason=f"http {resp.status_code}")
+                        continue
+                    if resp.status_code >= 400:
+                        await resp.aread()
+                        raise OpenRouterError(
+                            f"OpenRouter returned {resp.status_code}: {resp.text[:500]}"
+                        )
+
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        raw = line[6:]
+                        if raw.strip() == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(raw)
+                        except json.JSONDecodeError:
+                            continue
+
+                        usage = chunk.get("usage")
+                        if isinstance(usage, dict):
+                            prompt_tokens = int(usage.get("prompt_tokens", prompt_tokens) or prompt_tokens)
+                            completion_tokens = int(usage.get("completion_tokens", completion_tokens) or completion_tokens)
+                            cost = float(usage.get("cost", cost) or cost)
+
+                        choices = chunk.get("choices", [])
+                        if choices and isinstance(choices[0], dict):
+                            delta = choices[0].get("delta", {})
+                            if isinstance(delta, dict):
+                                token = delta.get("content")
+                                if isinstance(token, str) and token:
+                                    yield token
+
+                result = CompletionResult(
+                    content="",
+                    model=model,
+                    cost_usd=cost,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                )
+                log.info(
+                    "openrouter_completion",
+                    model=model,
+                    cost_usd=cost,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    streamed=True,
+                )
+                if on_complete is not None:
+                    on_complete(result)
+                return
+
+            except httpx.HTTPError as exc:
+                last_error = exc
+                if attempt < _MAX_RETRIES:
+                    await self._backoff(attempt, model=model, reason=str(exc))
+                    continue
+                raise OpenRouterError(f"network error calling OpenRouter: {exc}") from exc
+
+        raise OpenRouterError(f"OpenRouter streaming retries exhausted for model {model}: {last_error}")
 
     @staticmethod
     def _parse_response(payload: dict[str, object], *, model: str) -> CompletionResult:

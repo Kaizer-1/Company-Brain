@@ -44,6 +44,8 @@ ADRs record non-trivial design choices: what we picked, what we rejected, and wh
 | [decisions/0023-typed-tools-not-generated-cypher.md](decisions/0023-typed-tools-not-generated-cypher.md) | Phase 4A: the agent calls five typed Python functions, never LLM-generated Cypher; injection/parse/wrong-traversal surface eliminated; enumerable testable behaviour; the "yes I could, here's why I didn't" defense |
 | [decisions/0024-route-then-execute-architecture.md](decisions/0024-route-then-execute-architecture.md) | Phase 4A: constrained route classifier then fixed branch then synthesis, vs an end-to-end tool-calling loop; per-stage testability, bounded cost/latency, route accuracy as one metric; tradeoff is no cross-tool chaining |
 | [decisions/0025-provenance-verification-loop.md](decisions/0025-provenance-verification-loop.md) | Phase 4A: verify-then-retry (max 2) Python check that every cited event id is in the tool's provenance; self-heals stray citations, flags persistent failures, never lets a fabricated citation through |
+| [decisions/0026-sse-not-websockets.md](decisions/0026-sse-not-websockets.md) | Phase 4B: SSE over fetch+reader chosen over WebSockets for the streaming ask endpoint; one-way push, POST body support, rollback via one constant flip |
+| [decisions/0027-stream-synthesis-only.md](decisions/0027-stream-synthesis-only.md) | Phase 4B: only synthesis is token-streamed; route/tool/verify emit one event each; LangGraph astream not used (would leak internals through API) |
 
 ---
 
@@ -74,6 +76,7 @@ Long-form design documents. UX wireframes and visual artefacts arrive in Phase 4
 | [design/frontend-architecture.md](design/frontend-architecture.md) | Phase-3C frontend architecture: tech stack rationale (Vite+React+TanStack Query+react-force-graph-2d), four-page structure, data-fetching strategy, styling conventions (design tokens, anti-patterns), nginx proxy pattern, production delta |
 | [design/semantic-search.md](design/semantic-search.md) | Phase-3D semantic search: bge-small-en-v1.5 + pgvector HNSW, 7-stage hybrid retrieval pipeline, linear blend rationale, module structure, eval methodology, production-scale changes |
 | [design/agent-architecture.md](design/agent-architecture.md) | Phase-4A agent: LangGraph route-then-execute-then-verify state machine, node-by-node walkthrough, typed-tools rationale, provenance verification loop, cost/latency, single-model choice, out-of-scope cuts, and the production scale path (caching, streaming, multi-turn, access control) |
+| [design/agent-streaming.md](design/agent-streaming.md) | Phase-4B streaming: SSE protocol spec, event sequence, callback-to-queue bridge, frontend integration, perceived vs actual latency, what is not changed |
 
 ---
 
@@ -88,6 +91,7 @@ Generated quality reports. Numbers are honest and reproducible from the determin
 | [eval/phase-3b-query-results.md](eval/phase-3b-query-results.md) | Killer-query integration eval: all four KQs **pass** on the live LLM-extracted graph (111 events, provenance valid); expected answers per KQ from `narrative.py`; hand-written Discussion on the ordering bug the run caught, per-query reliability, and extraction sensitivity |
 | [eval/phase-3d-search-results.md](eval/phase-3d-search-results.md) | Semantic search eval: 20 questions, Recall@10=0.942, MRR=0.910; warm latency ~149ms; 3 partial misses documented with failure-mode analysis |
 | [eval/phase-4a-agent-results.md](eval/phase-4a-agent-results.md) | Agent eval: 30 questions across five routes + refusals; route accuracy 1.000, refusal 1.000, citation overlap 0.608, first-try verification 0.864, mean cost $0.003/q; latency missed the 4s target (two sequential LLM calls) with an honest failure-mode breakdown incl. the one retry-exhausted question |
+| [eval/phase-4b-streaming-results.md](eval/phase-4b-streaming-results.md) | Streaming perceived-latency eval: 10 questions, measures time-to-first-synthesis-token; placeholder until live run fills in numbers |
 
 ---
 
@@ -117,3 +121,4 @@ One doc per subphase. Contains Q&A pairs and key whiteboard concepts for that ph
 | [interview-prep/phase-3c-readiness.md](interview-prep/phase-3c-readiness.md) | 10 Q&A pairs + 5 whiteboard concepts: react-force-graph vs D3-scratch, resolved/fragmented toggle mechanics, why the audit page, full provenance flow, scaling the graph view past 1000 nodes, dark-mode default rationale, KQ1 click-through walkthrough, non-optional provenance, audit pagination approach, what's next |
 | [interview-prep/phase-3d-readiness.md](interview-prep/phase-3d-readiness.md) | 10 Q&A pairs + 5 whiteboard concepts: local model choice, bge-small specifics, HNSW parameters, linear blend vs LLM rerank, graph signal value, filter/fanout interaction, placeholder table rationale, search vs KQs, production scale changes, ablation methodology |
 | [interview-prep/phase-4a-readiness.md](interview-prep/phase-4a-readiness.md) | 12 Q&A pairs + 6 whiteboard concepts: LangGraph vs LangChain, typed tools vs generated Cypher, provenance verification, the five-route enum, misclassification handling, cost-per-question, scaling to 10×, agent vs vanilla RAG, what's missing for production, the read-only safety boundary, the verify-then-retry loop, how-do-you-know-it-works |
+| [interview-prep/phase-4b-readiness.md](interview-prep/phase-4b-readiness.md) | 8 Q&A pairs: why streaming / perceived vs actual latency, SSE vs WebSockets, why stream synthesis only, verify-retry + streaming interaction, filter validation guard design, empty-result UX, rollback plan |

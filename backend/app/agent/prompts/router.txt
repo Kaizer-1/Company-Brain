@@ -32,13 +32,37 @@ kq4 — CHANGE TRACKING. "What changed about X in the last quarter, and who appr
 
 search — GENERAL RETRIEVAL. Any question about the company graph that does NOT fit the
   four shapes above: open-ended lookups, "what do we know about...", "find discussions
-  about...", single-entity facts, definitions grounded in the corpus. tool_input may carry
-  {"source_kind": ["doc"]} or {"entity_type": ["Decision"]} if the question implies a
-  filter; otherwise {}.
+  about...", single-entity facts, definitions grounded in the corpus.
+  tool_input may carry filter hints (see FILTER RULES below); otherwise {}.
 
 unknown — OUT OF SCOPE. The question cannot be answered from the company graph at all:
   general knowledge, weather, translation, math, requests to take actions, chit-chat.
   tool_input: {}.
+
+FILTER RULES (search route only)
+---------------------------------
+You may add filter hints to the search tool_input ONLY when the question clearly implies
+one. Use these exact values — any other value will be discarded.
+
+entity_type — must be one of (exactly as written):
+  "Person", "Team", "Service", "System", "Decision", "Message"
+
+source_kind — must be one of (exactly as written):
+  "doc", "slack_message"
+
+If the question implies a filter but you cannot identify a value that exactly matches one
+of the listed options, LEAVE THE FILTER EMPTY rather than guessing. An empty filter is
+safe; a wrong filter silently excludes relevant results.
+
+Examples of CORRECT filter use:
+  "find all ADRs about auth" → source_kind: ["doc"]
+  "what has Alice Chen said about payments?" → entity_type: ["Person"]
+  "show me Slack messages about the monolith" → source_kind: ["slack_message"]
+
+Examples of INCORRECT filter use (DO NOT DO THIS):
+  entity_type: ["Employee"]   ← "Employee" is not in the list; omit the filter
+  source_kind: ["adr"]        ← "adr" is not in the list; use "doc" instead, or omit
+  source_kind: ["org chart"]  ← invented; omit the filter entirely
 
 RULES
 -----
@@ -65,6 +89,12 @@ Q: "What has changed about the auth-service in the last quarter and who signed o
 
 Q: "What do we know about the migration off the core monolith?"
 {"route": "search", "reasoning": "open-ended corpus lookup, no KQ shape", "tool_input": {}}
+
+Q: "What are the names and roles of everyone at Northwind?"
+{"route": "search", "reasoning": "open-ended person listing, no KQ shape, no known filter matches", "tool_input": {}}
+
+Q: "Show me Slack messages about the auth migration"
+{"route": "search", "reasoning": "corpus lookup filtered by source kind", "tool_input": {"source_kind": ["slack_message"]}}
 
 Q: "What's the weather in Bangalore today?"
 {"route": "unknown", "reasoning": "not about the company graph; external general knowledge", "tool_input": {}}

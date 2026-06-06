@@ -159,4 +159,4 @@ async def test_empty_answer_terminal() -> None:
     out = await tools.empty_answer({"question": "q", "route": "kq2"}, deps=deps)
     assert out["citations"] == []
     assert out["verified"] is True
-    assert "no matching records" in out["answer"]
+    assert "couldn't find" in out["answer"]  # updated empty-result copy (Phase 4B)
