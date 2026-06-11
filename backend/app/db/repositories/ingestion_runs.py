@@ -16,11 +16,22 @@ from typing import TYPE_CHECKING
 from sqlalchemy import select
 
 from app.db.repositories.base import Repository
-from app.ingestion.schemas import IngestionRunDTO, IngestionRunUpsert
+from app.ingestion.schemas import (
+    IngestionRunDTO,
+    IngestionRunPage,
+    IngestionRunSummary,
+    IngestionRunUpsert,
+    StageResult,
+)
+from app.models.events import Event
 from app.models.ingestion_runs import IngestionRun
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from sqlalchemy.ext.asyncio import AsyncSession
+
+_SNIPPET_CHARS = 140
 
 
 def _to_dto(row: IngestionRun) -> IngestionRunDTO:
@@ -40,11 +51,73 @@ def _to_dto(row: IngestionRun) -> IngestionRunDTO:
     )
 
 
+def _duration_ms(row: IngestionRun) -> float | None:
+    """Wall-clock reconciliation time in ms, or None if the run never completed."""
+    if row.completed_at is None:
+        return None
+    return round((row.completed_at - row.started_at).total_seconds() * 1000.0, 1)
+
+
+def _to_summary(row: IngestionRun, *, source_kind: str, content: str) -> IngestionRunSummary:
+    """Build the audit-tab row from a run joined to its event (Phase 5B)."""
+    snippet = content.strip().replace("\n", " ")
+    if len(snippet) > _SNIPPET_CHARS:
+        snippet = snippet[: _SNIPPET_CHARS - 1].rstrip() + "…"
+    return IngestionRunSummary(
+        id=row.id,
+        event_id=row.event_id,
+        source_kind=source_kind,
+        content_snippet=snippet,
+        status=row.status,
+        stages=[StageResult.model_validate(s) for s in row.stages_json],
+        nodes_created_count=row.nodes_created_count,
+        nodes_merged_count=row.nodes_merged_count,
+        edges_created_count=row.edges_created_count,
+        contradictions_count=row.contradictions_count,
+        cost_usd=float(row.cost_usd),
+        duration_ms=_duration_ms(row),
+        started_at=row.started_at,
+        completed_at=row.completed_at,
+        error=row.error,
+    )
+
+
 class IngestionRunRepository(Repository[IngestionRun]):
     """Read and upsert operations for the ``ingestion_runs`` table."""
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(session)
+
+    async def list_paginated(
+        self, *, limit: int = 20, before: datetime | None = None
+    ) -> IngestionRunPage:
+        """Return ingestion runs newest-first, joined to their events, cursor-paginated.
+
+        Sorted by ``started_at`` descending. ``before`` is an exclusive cursor (the previous
+        page's ``next_cursor``); pass ``None`` for the first page. One extra row is fetched to
+        decide whether a next page exists; if so its ``started_at`` is returned as the cursor.
+        The join to ``events`` supplies ``source_kind`` and the content snippet the tab shows.
+        """
+        stmt = (
+            select(IngestionRun, Event.source_type, Event.content)
+            .join(Event, Event.id == IngestionRun.event_id)
+            .order_by(IngestionRun.started_at.desc())
+            .limit(limit + 1)
+        )
+        if before is not None:
+            stmt = stmt.where(IngestionRun.started_at < before)
+
+        result = await self._session.execute(stmt)
+        rows = result.all()
+
+        has_more = len(rows) > limit
+        page_rows = rows[:limit]
+        items = [
+            _to_summary(run, source_kind=source_type.value, content=content)
+            for run, source_type, content in page_rows
+        ]
+        next_cursor = page_rows[-1][0].started_at if has_more and page_rows else None
+        return IngestionRunPage(items=items, next_cursor=next_cursor)
 
     async def get_by_event(self, event_id: uuid.UUID) -> IngestionRunDTO | None:
         """Return the ingestion run for an event, or None if it has not been ingested."""

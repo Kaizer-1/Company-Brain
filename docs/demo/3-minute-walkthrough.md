@@ -185,6 +185,19 @@ employees"** again. The agent answers **14**. Point at the number.
 > not a vibe, an integer. That's the whole thesis: scattered knowledge in, a self-updating,
 > queryable graph out."
 
+**Step 4 — the reconciliation is on the record (Phase 5B).** Press `g a` (or click `audit`), then
+click the **Ingestion runs** tab. The run you just triggered is the top row.
+
+> "And it's not a black box. This is the ingestion audit — every live reconciliation, newest first.
+> Here's the one from ten seconds ago: status `reconciled`, the per-stage timeline as coloured dots,
+> one node created, zero merges, the cost, and the latency. Below the table, the System metrics
+> strip — total ingestions, median and p95 latency, mean cost — read from `/api/metrics`. The system
+> measures itself, and the measurement is what told us the real latency cost was the embedding
+> cold-start, not the LLM adjudication. That's how the resolution work in this phase got prioritised:
+> measure first, then optimise."
+
+- Point at the top row's stage dots, then the System metrics numbers below the table.
+
 **Optional KQ2 variant (if they want to see a contradiction):** inject
 `Slack #payments-eng: D-0005 feels stale — we should not keep the legacy-auth deadline`, then run
 KQ2 ("which active decisions are contradicted by recent discussions?") — the new message now appears

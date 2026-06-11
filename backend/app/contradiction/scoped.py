@@ -31,6 +31,7 @@ from app.contradiction.detector import (  # noqa: PLC2701 — intra-package reus
     is_candidate,
 )
 from app.contradiction.models import ContradictionResult, WrittenContradiction
+from app.observability import metrics
 from app.queries.temporal import resolve_as_of
 
 if TYPE_CHECKING:
@@ -115,6 +116,7 @@ async def detect_for_new_message(
                 decision_id=str(dec["id"]),
                 title=str(dec.get("title") or ""),
             )
+        metrics.record_contradiction()
         return (str(dec["id"]), verdict.confidence) if verdict.contradicts else None
 
     verdicts = await asyncio.gather(*[_judge(dec) for dec in candidates])
@@ -183,6 +185,7 @@ async def detect_for_new_decision(
             verdict = await adjudicator.adjudicate(
                 message_content=str(msg["content"]), decision_id=decision_id, title=title
             )
+        metrics.record_contradiction()
         return (
             (str(msg["id"]), _first_event(msg), verdict.confidence)
             if verdict.contradicts

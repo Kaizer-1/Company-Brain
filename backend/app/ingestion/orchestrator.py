@@ -49,6 +49,7 @@ from app.ingestion.stages import (
     run_search_index,
     run_temporal,
 )
+from app.observability import metrics
 
 if TYPE_CHECKING:
     import uuid
@@ -172,6 +173,14 @@ async def reconcile_event(
         duration_ms=duration_ms,
         cost_usd=round(cost, 6),
     )
+
+    # Observability (Phase 5B): record per-stage durations and the per-event totals in one pass
+    # over the assembled timeline. Purely additive — a metrics write never alters stage state;
+    # the dedup/short-circuit path returns earlier and is intentionally not counted (no work).
+    for stage in stages:
+        metrics.record_stage(stage.name, stage.status, stage.duration_ms)
+    metrics.record_ingestion(status, duration_ms, response.cost_usd)
+
     await _persist_run(session_factory, response, started_at=started_at, stages=stages)
     log.info(
         "reconcile_complete",

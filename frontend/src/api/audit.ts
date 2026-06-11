@@ -1,4 +1,4 @@
-import type { MergeDecisionPage } from '../types';
+import type { IngestionRunPage, MergeDecisionPage, SystemMetrics } from '../types';
 import { apiFetch } from './client';
 
 export interface AuditFilters {
@@ -17,4 +17,24 @@ export function fetchAudit(filters: AuditFilters = {}): Promise<MergeDecisionPag
   params.set('limit', String(filters.limit ?? 50));
   params.set('offset', String(filters.offset ?? 0));
   return apiFetch<MergeDecisionPage>(`/api/audit/merge-decisions?${params.toString()}`);
+}
+
+// ── Phase 5B: ingestion-runs audit feed + system metrics ──────────────────────
+
+export interface IngestionRunsParams {
+  limit?: number;
+  before?: string | null; // cursor = a prior page's next_cursor (started_at)
+}
+
+export function fetchIngestionRuns(
+  params: IngestionRunsParams = {},
+): Promise<IngestionRunPage> {
+  const q = new URLSearchParams();
+  q.set('limit', String(params.limit ?? 20));
+  if (params.before) q.set('before', params.before);
+  return apiFetch<IngestionRunPage>(`/api/audit/ingestion-runs?${q.toString()}`);
+}
+
+export function fetchSystemMetrics(): Promise<SystemMetrics> {
+  return apiFetch<SystemMetrics>('/api/metrics');
 }

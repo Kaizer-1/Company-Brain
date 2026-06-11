@@ -1,4 +1,4 @@
-"""Merge-decision audit endpoint (Phase 3C).
+"""Audit endpoints (Phase 3C + 5B).
 
 GET /api/audit/merge-decisions
     ?tier=1|2|3                                               optional tier filter
@@ -10,17 +10,33 @@ GET /api/audit/merge-decisions
 Returns paginated merge_decisions rows, newest first. This page lets an interviewer
 inspect every AI resolution decision with its tier, similarity score, and LLM reasoning —
 the "I can defend every choice the system made" claim made real.
+
+GET /api/audit/ingestion-runs (Phase 5B)
+    ?limit=20
+    &before=<ISO datetime cursor>
+
+Returns cursor-paginated ingestion runs, newest first, joined to their source events. Mirrors
+the merge-decisions tab on the frontend: every live reconciliation the engine performed, with
+its per-stage timeline, counts, cost, and duration. Makes the ingestion engine's history
+visible to the demo audience and operators (Decision 1).
 """
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel
 
+from app.db.repositories.ingestion_runs import IngestionRunRepository
 from app.db.repositories.resolution import MergeDecisionRepository
+from app.ingestion.schemas import IngestionRunPage
 from app.models.enums import MergeDecisionType, NodeType
 from app.schemas.postgres import MergeDecisionDTO
+
+if TYPE_CHECKING:
+    from datetime import datetime
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 log = structlog.get_logger(__name__)
@@ -71,3 +87,29 @@ async def list_merge_decisions(
         returned=len(page),
     )
     return MergeDecisionPage(items=page, total=total, limit=limit, offset=offset)
+
+
+@router.get(
+    "/ingestion-runs",
+    response_model=IngestionRunPage,
+    summary="Cursor-paginated live-ingestion run history, newest first (Phase 5B).",
+)
+async def list_ingestion_runs(
+    request: Request,
+    limit: int = Query(20, ge=1, le=100),
+    before: datetime | None = Query(
+        None, description="Exclusive cursor: the previous page's next_cursor (started_at)."
+    ),
+) -> IngestionRunPage:
+    """Return ingestion runs newest-first, joined to their events, cursor-paginated.
+
+    Mirrors the merge-decisions audit endpoint but uses cursor (not offset) pagination because
+    the ingestion feed grows from the head — a new run prepended between page loads would shift
+    every offset. The frontend renders this as the "Ingestion runs" tab and a "Load more" button
+    that passes ``next_cursor`` back as ``before``.
+    """
+    async with request.app.state.session_factory() as session:
+        repo = IngestionRunRepository(session)
+        page = await repo.list_paginated(limit=limit, before=before)
+    log.info("ingestion_runs_fetched", returned=len(page.items), has_more=page.next_cursor is not None)
+    return page

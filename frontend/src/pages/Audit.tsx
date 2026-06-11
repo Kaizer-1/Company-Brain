@@ -1,13 +1,18 @@
 /**
- * /audit — Resolution audit trail.
+ * /audit — Audit trail with two tabs (Phase 5B).
  *
- * Tabular view of merge_decisions. Filterable by tier (1/2/3), decision type,
- * and node type. LLM reasoning truncated, expandable per row.
- * Sorted newest-first. "Every AI decision is logged" made visible.
+ *  - "Resolution decisions" (default): tabular view of merge_decisions, filterable by tier,
+ *    decision type, and node type; LLM reasoning expandable per row. Newest-first.
+ *  - "Ingestion runs": every live reconciliation, with a per-stage timeline and a System
+ *    metrics strip (see components/audit/IngestionRunsTab).
+ *
+ * The selected tab is mirrored into the URL query (?tab=ingestion-runs) so the view is
+ * shareable and survives a refresh. "Every AI decision is logged" made visible.
  */
 
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { fetchAudit } from '../api/audit';
 import { queryKeys } from '../api/client';
@@ -15,6 +20,8 @@ import { Badge } from '../components/ui/Badge';
 import { ProgressBar } from '../components/ui/ProgressBar';
 import { ErrorMessage } from '../components/ui/ErrorMessage';
 import { Skeleton } from '../components/ui/Skeleton';
+import { AuditTabs, type AuditTab } from '../components/audit/AuditTabs';
+import { IngestionRunsTab } from '../components/audit/IngestionRunsTab';
 import type { DecisionType, MergeDecisionDTO } from '../types';
 
 const DECISION_VARIANTS: Record<DecisionType, { label: string; variant: 'success' | 'accent' | 'muted' | 'warn' }> = {
@@ -39,6 +46,24 @@ const NODE_TYPES = ['', 'Person', 'Service', 'System', 'Team', 'Decision'];
 const PAGE_SIZE = 50;
 
 export function Audit() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab: AuditTab =
+    searchParams.get('tab') === 'ingestion-runs' ? 'ingestion-runs' : 'resolution';
+  const setTab = (next: AuditTab) => {
+    setSearchParams(next === 'resolution' ? {} : { tab: next }, { replace: true });
+  };
+
+  return (
+    <div className="h-page overflow-y-auto">
+      <div className="p-5 space-y-4">
+        <AuditTabs active={tab} onChange={setTab} />
+        {tab === 'resolution' ? <ResolutionDecisionsTab /> : <IngestionRunsTab />}
+      </div>
+    </div>
+  );
+}
+
+function ResolutionDecisionsTab() {
   const [tier, setTier] = useState<string>('');
   const [decision, setDecision] = useState<string>('');
   const [nodeType, setNodeType] = useState<string>('');
@@ -68,18 +93,17 @@ export function Audit() {
   const handleFilterChange = () => setOffset(0); // reset to page 1 on filter change
 
   return (
-    <div className="h-page overflow-y-auto">
+    <div className="space-y-4">
       <ProgressBar visible={isLoading} />
 
-      <div className="p-5 space-y-4">
-        {/* Page header */}
-        <div>
-          <h1 className="text-xl font-semibold text-txt">Resolution audit trail</h1>
-          <p className="text-sm text-txt-muted mt-1">
-            Every entity-resolution decision — auto-merge, LLM-adjudicated, rejected, below
-            threshold — logged with tier, similarity score, and reasoning.
-          </p>
-        </div>
+      {/* Page header */}
+      <div>
+        <h1 className="text-xl font-semibold text-txt">Resolution audit trail</h1>
+        <p className="text-sm text-txt-muted mt-1">
+          Every entity-resolution decision — auto-merge, LLM-adjudicated, rejected, below
+          threshold — logged with tier, similarity score, and reasoning.
+        </p>
+      </div>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
@@ -151,7 +175,6 @@ export function Audit() {
           </>
         )}
       </div>
-    </div>
   );
 }
 

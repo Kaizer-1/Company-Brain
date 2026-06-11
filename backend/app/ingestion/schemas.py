@@ -146,3 +146,46 @@ class IngestionRunDTO(BaseModel):
     contradictions_count: int
     cost_usd: float
     error: str | None
+
+
+# ---------------------------------------------------------------------------
+# Audit-tab read models (Phase 5B)
+# ---------------------------------------------------------------------------
+class IngestionRunSummary(BaseModel):
+    """One ingestion run joined to its source event, for the ``/audit`` ingestion-runs tab.
+
+    Mirrors the resolution tab's row shape (Decision 1, Phase 5B): everything the
+    ``ingestion_runs`` table records, plus the event's ``source_kind`` and a short content
+    snippet (joined from ``events``) so a reader has context without opening the modal.
+    ``duration_ms`` is computed from ``completed_at - started_at`` at read time, not stored.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: uuid.UUID
+    event_id: uuid.UUID
+    source_kind: str
+    content_snippet: str
+    status: str
+    stages: list[StageResult]
+    nodes_created_count: int
+    nodes_merged_count: int
+    edges_created_count: int
+    contradictions_count: int
+    cost_usd: float
+    duration_ms: float | None
+    started_at: datetime
+    completed_at: datetime | None
+    error: str | None
+
+
+class IngestionRunPage(BaseModel):
+    """A cursor-paginated slice of ingestion runs, newest first.
+
+    ``next_cursor`` is the ``started_at`` of the row that would begin the *next* page (the
+    frontend passes it back as ``before``); ``None`` means there are no more rows. Cursor
+    pagination — not offset — because the audit feed grows from the head as new events ingest.
+    """
+
+    items: list[IngestionRunSummary]
+    next_cursor: datetime | None = None

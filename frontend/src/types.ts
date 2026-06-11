@@ -450,3 +450,59 @@ export interface IngestEventResponse {
   cost_usd: number;
   deduplicated: boolean;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Observability (Phase 5B) — GET /api/audit/ingestion-runs + GET /api/metrics
+// ─────────────────────────────────────────────────────────────────────────────
+
+// One ingestion run joined to its source event, for the /audit "Ingestion runs" tab.
+export interface IngestionRunSummary {
+  id: string;
+  event_id: string;
+  source_kind: SourceKind;
+  content_snippet: string;
+  status: IngestionStatus;
+  stages: StageResult[];
+  nodes_created_count: number;
+  nodes_merged_count: number;
+  edges_created_count: number;
+  contradictions_count: number;
+  cost_usd: number;
+  duration_ms: number | null;
+  started_at: string;
+  completed_at: string | null;
+  error: string | null;
+}
+
+export interface IngestionRunPage {
+  items: IngestionRunSummary[];
+  next_cursor: string | null; // started_at cursor for the next page; null = no more rows
+}
+
+// System metrics snapshot (mirrors backend MetricsSnapshot).
+export interface DurationStats {
+  p50: number;
+  p95: number;
+  max: number;
+}
+
+export interface CostStats {
+  mean: number;
+  p95: number;
+  total: number;
+}
+
+export interface SystemMetrics {
+  ingestion: {
+    total: number;
+    by_status: Record<string, number>;
+    duration_ms: DurationStats;
+    cost_usd: CostStats;
+  };
+  stages: Record<string, { count: number; duration_ms: DurationStats }>;
+  adjudications: {
+    resolution_total: number;
+    resolution_by_tier: Record<string, number>;
+    contradiction_total: number;
+  };
+}
