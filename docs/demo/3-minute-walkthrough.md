@@ -152,6 +152,50 @@
 
 ---
 
+## Beat 4 — The Live Inject — /ingest (THE CLIMAX)
+
+> This is the moment that separates a good portfolio from a memorable one. Do it slowly and
+> let the screen do the talking. Budget ~30–40s; it can replace Beat 4 (Search) in a tight slot.
+
+**Setup line (while still on `/ask`):**
+
+> "Everything so far has been queries against a graph someone else built. Watch it build itself."
+
+**Step 1 — establish the baseline.** On `/ask`, type **"list all employees"**. The agent routes
+to the `enumerate` tool and answers **13**.
+
+> "Thirteen people. Remember that number."
+
+**Step 2 — inject.** Press `g i` (or click `ingest`). Paste a real new event into the textarea:
+
+> `Slack #general: welcome aboard Nadia Okafor, joining the platform team as a Software Engineer.`
+
+Set source kind to `doc`, leave the rest, and hit **Reconcile**. The per-stage timeline animates
+in: `extract ✓`, `embed ✓`, `resolve ✓` (no match — a genuinely new person), the decision/message
+stages `skipped`, in ~6 seconds. The "what changed" panel shows a new **Person · Nadia Okafor** node.
+
+> "It just ran the full pipeline — extraction, resolution against the existing thirteen people,
+> embedding — scoped to this one event, idempotently, in about six seconds. Every AI decision it
+> made is in the audit trail. Nothing was hand-edited."
+
+**Step 3 — verify with the structural tool (the punchline).** Go back to `/ask`, type **"list all
+employees"** again. The agent answers **14**. Point at the number.
+
+> "Fourteen. The graph updated itself, and the structural tool confirms it with an exact count —
+> not a vibe, an integer. That's the whole thesis: scattered knowledge in, a self-updating,
+> queryable graph out."
+
+**Optional KQ2 variant (if they want to see a contradiction):** inject
+`Slack #payments-eng: D-0005 feels stale — we should not keep the legacy-auth deadline`, then run
+KQ2 ("which active decisions are contradicted by recent discussions?") — the new message now appears
+as a contradiction. Same loop, contradiction edition.
+
+> Fallbacks: if reconciliation is slow, narrate the per-stage timeline as it fills (it's honest —
+> two LLM calls are in the critical path). If you double-submit, the banner says "Already ingested"
+> — that's the idempotency contract, lean into it: "submit twice, same result, by design."
+
+---
+
 ## Beat 5: The Audit Trail (2:30–2:50)
 
 - Click `/audit`.

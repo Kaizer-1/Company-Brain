@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 /**
- * Implements "g k/h/g/q/s/a" chord keyboard shortcuts (Linear-style nav).
+ * Implements "g k/i/h/g/q/s/a" chord keyboard shortcuts (Linear-style nav).
  * The first key press starts a 1s window for the second key.
  * Skipped when focus is in an input, textarea, or select.
  */
@@ -24,6 +24,7 @@ export function useKeyboardNav() {
         pending.current = null;
         switch (key) {
           case 'k': navigate('/ask'); break;
+          case 'i': navigate('/ingest'); break;
           case 'h': navigate('/'); break;
           case 'g': navigate('/graph'); break;
           case 'q': navigate('/queries'); break;

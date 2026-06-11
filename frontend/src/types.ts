@@ -389,3 +389,64 @@ export type StreamEvent =
   | StreamEventVerifyDone
   | StreamEventComplete
   | StreamEventError;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live ingestion (Phase 5A) — POST /api/events
+// ─────────────────────────────────────────────────────────────────────────────
+export type SourceKind = 'doc' | 'slack_message';
+export type IngestionStatus = 'reconciled' | 'partial' | 'failed';
+export type StageStatus = 'ok' | 'skipped' | 'failed';
+
+export interface IngestEventRequest {
+  source_kind: SourceKind;
+  source_ref: string;
+  content: string;
+  occurred_at: string; // ISO-8601
+  external_id?: string | null;
+}
+
+export interface StageResult {
+  name: string;
+  status: StageStatus;
+  duration_ms: number;
+  detail: string | null;
+}
+
+export interface NodeRef {
+  id: string;
+  label: string;
+  display_name: string;
+}
+
+export interface MergeRef {
+  loser_id: string;
+  winner_id: string;
+  label: string;
+  tier: number;
+  confidence: number;
+}
+
+export interface EdgeRef {
+  type: string;
+  source_id: string;
+  target_id: string;
+}
+
+export interface ContradictionRef {
+  message_id: string;
+  decision_id: string;
+  confidence: number;
+}
+
+export interface IngestEventResponse {
+  event_id: string;
+  status: IngestionStatus;
+  stages_run: StageResult[];
+  nodes_created: NodeRef[];
+  nodes_merged: MergeRef[];
+  edges_created: EdgeRef[];
+  contradictions_detected: ContradictionRef[];
+  duration_ms: number;
+  cost_usd: number;
+  deduplicated: boolean;
+}

@@ -8,7 +8,7 @@
 
 ## Subphase
 
-Phase 4C — Structural Agent Tools
+Phase 5A — Streaming Ingestion + Live Reconciliation Engine
 
 ## Date
 
@@ -18,82 +18,59 @@ Phase 4C — Structural Agent Tools
 
 ## What Was Built
 
-Four typed structural query tools that close the class of graph-native questions the four
-KQs and semantic search could not answer correctly (lookups, typed traversals, enumeration,
-counting). The agent now routes ten ways. The original failing question — "name all the
-employees" — now routes to `enumerate` and returns all 13 people.
+The original-plan demo moment: a new event typed into a form is ingested through the
+extraction → resolution → temporal → contradiction pipeline **incrementally** (not full rebuild),
+the graph reconciles in ~6s, an audit row records the run, and the Phase-4C structural tools
+confirm the change with an exact count ("list all employees" → 13 → 14). Verified end-to-end live
+through the rebuilt Docker stack.
 
-### Backend: four structural query tools (`app/queries/`)
+### Backend: incremental reconciliation (`app/ingestion/`)
 
-- `structural_common.py` — **new** shared helpers: `NODE_TYPES`/`NodeTypeLiteral`,
-  `StatusLiteral`, `node_display_name()` (uniform `coalesce` name), `identity_predicate()`
-  (case-insensitive match across canonical_id/canonical_name/id/handle), `status_predicate()`
-  (active/deprecated/all normalisation), `jsonable_props()` (neo4j temporal → JSON).
-- `get_entity.py` — **new** `GetEntityInput`/`GetEntityResult` + `get_entity()`: single-node
-  property lookup + neighbour edge-type summary; `not_found` sentinel.
-- `neighbors.py` — **new** `NeighborsInput`/`Neighbor`/`NeighborsResult` +
-  `neighbors_of_entity()`: typed one-hop traversal with edge/direction/limit; `total_count`.
-- `enumerate.py` — **new** (load-bearing) `EnumerateInput`/`EnumeratedNode`/`EnumerateResult`
-  + `enumerate_by_type()`: filtered listing with status/order_by/limit/has_no_edge/team_filter;
-  pre-limit `total_count`. Absorbs recency (order_by) and find-orphans (has_no_edge).
-- `aggregate.py` — **new** `AggregateInput`/`AggregateGroup`/`AggregateResult` +
-  `aggregate_by_type()`: count + optional group_by; always-empty provenance by design.
-- `__init__.py` — exports the four new functions + their input/result types.
+- `orchestrator.py` — `reconcile_event(event_id, *, session_factory, neo4j_driver, client, model,
+  force)`: runs the 8 stages in batch order, scoped to one event, idempotently; persists one
+  `ingestion_runs` row; short-circuits via the orchestration guard on replay.
+- `stages.py` — per-stage glue: provenance-derived `GraphScope`, the extraction **skip-guard**,
+  embed/resolve/consolidate/project/temporal/materialize-message/contradiction/search-index, each
+  returning a `StageResult`.
+- `scoped_resolution.py` — true node-scoped resolution (new fragments × existing of their type),
+  reusing the 3A tier machinery (`_decide_and_apply`); derives this event's `MergeRef`s.
+- `scoped_temporal.py` — documented thin pass-through to `enrich_temporal` (idempotent + LLM-free).
+- `scoped_contradiction.py` — adapter over `app.contradiction.scoped`.
+- `schemas.py` — `IngestEventRequest`/`IngestEventResponse`/`StageResult`/`NodeRef`/`MergeRef`/
+  `EdgeRef`/`ContradictionRef` + persistence DTOs.
+- `api_router.py` — `POST /api/events`: idempotent insert, single-writer `asyncio.Lock`
+  (30s → 503), awaited reconcile, registered in `main.py`.
+- `db/repositories/ingestion_runs.py` + `models/ingestion_runs.py` + migration
+  `0005_ingestion_runs.py` (upsert keyed on `event_id`).
 
-All Cypher is parameterised — labels via `$type IN labels(n)`, edges via `type(r)=$edge`,
-direction via `startNode(r)=n`, negative-existence via `EXISTS{…WHERE type(r)=$has_no_edge}`.
-Only `ORDER BY` is interpolated, from a closed Literal→fragment map.
+### Backend: scoped contradiction + message materialise (`app/contradiction/`)
 
-### Backend: agent wiring (`app/agent/`)
-
-- `state.py` — `RouteLiteral`/`ROUTE_VALUES` extended to ten; added `STRUCTURAL_ROUTES`.
-- `schemas.py` — re-exports the four `*Result` types; added `StructuralAnswer` (optional
-  citations); added `tool_output` to `AskResponse`.
-- `tools.py` — four new tool nodes (`get_entity_tool`, `neighbors_tool`, `enumerate_tool`,
-  `aggregate_tool`) validating `*Input` and falling back to search on bad input; helpers
-  `_first_err`, `_structural_to_state`.
-- `graph.py` — four nodes wired into the StateGraph; `_route_after_tool` sends genuine
-  structural results (QueryResult `value` shape) to synthesis even with no events.
-- `verification.py` — skips the citation check when route is structural AND no events (ADR 0030).
-- `synthesis.py` — `_synthesis_plan()` picks prompt+schema; structural-no-events uses
-  `synthesis_structural.txt` + `StructuralAnswer`; `_parse_synthesis_json` takes a schema.
-- `config.py` — added `synthesis_structural_prompt_path`.
-- `runner.py` + `api_router.py` — populate `tool_output` for structural routes on both the
-  JSON response and the streaming `complete` event; streaming terminal condition lets a
-  genuine structural result flow into synthesis.
-- `prompts/router.txt` — redesigned: two-stage conceptual routing (shape → route), 20
-  few-shots, explicit KQ-vs-structural priority rule (ADR 0029).
-- `prompts/synthesis.txt` — added structural-data citation guidance.
-- `prompts/synthesis_structural.txt` — **new** citation-free structural prompt.
+- `scoped.py` — **new** `detect_for_new_message` / `detect_for_new_decision` (concurrent
+  adjudication, semaphore of 5), reusing the batch detector internals.
+- `models.py` — added `WrittenContradiction`.
+- `message_ingest.py` — added `ingest_one_message` (scoped single-Message MERGE).
 
 ### Frontend (`frontend/src/`)
 
-- `types.ts` — `AgentRoute` extended; `EntityResult`/`NeighborsResult`/`EnumerateResult`/
-  `AggregateResult`/`ToolOutput`; `tool_output` on `AskResponse` + `StreamEventComplete`.
-- `components/ask/results/` — **new** `EntityResult.tsx`, `NeighborsResult.tsx`,
-  `EnumerateResult.tsx`, `AggregateResult.tsx`, and `index.tsx` (`StructuralResultView`
-  dispatcher).
-- `pages/Ask.tsx` — dispatches to `StructuralResultView` in both stream + JSON branches; new
-  route labels.
-- `components/ask/StreamProgress.tsx` — route labels for the four new routes.
+- `pages/Ingest.tsx`, `components/ingest/IngestForm.tsx`, `components/ingest/ReconciliationView.tsx`,
+  `api/ingest.ts`, ingestion types in `types.ts`.
+- `App.tsx` `/ingest` route; `TopBar.tsx` nav + hint `g k/i/h/g/q/s/a`; `useKeyboardNav.ts` `g i`;
+  `Graph.tsx` `refetchOnWindowFocus: true`.
+- `__tests__/Ingest.test.tsx` (4 tests). Fixed a **pre-existing 4C build break** (`findLast`
+  needs `es2023` lib; bumped `tsconfig.app.json` `lib` → ES2023).
 
 ### Eval + docs
 
-- `data/agent_eval_questions.json` — 30 → 42 (q31–q42, 3 per new tool).
-- `eval/agent_eval.py` — gold citations for structural routes; `new_tool_accuracy`,
-  `route_accuracy_for`, `per_route_accuracy`; per-route table; generic report title.
-- `docs/eval/phase-4c-structural-results.md` — real 42-question results + Discussion.
-- `docs/design/structural-tools.md` (~1050 words); ADRs 0028/0029/0030;
-  `docs/interview-prep/phase-4c-readiness.md` (10 Q&A); demo Beat 3.5 extended;
+- `data/ingestion_eval_cases.json` (11 cases), `app/eval/ingestion_eval.py`,
+  `scripts/run_ingestion_eval.py`, `docs/eval/phase-5a-ingestion-results.md` (real numbers).
+- `docs/design/incremental-reconciliation.md` (1598 words); ADRs 0031/0032/0033;
+  `docs/interview-prep/phase-5a-readiness.md` (12 Q&A); demo Beat 4 (the live-inject climax);
   `docs/README.md` updated.
 
 ### Tests
 
-- `tests/queries/test_{enumerate,get_entity,neighbors,aggregate}.py` — 23 testcontainer tests.
-- `tests/agent/test_agent_new_routes.py` — routing + tool nodes + fallback (real Neo4j).
-- `tests/agent/test_agent_verification_structural.py` — the verification skip + that it does
-  NOT fire for event-bearing structural answers or non-structural routes.
-- `frontend/src/__tests__/Ask.structural.test.tsx` — one per renderer.
+- `tests/ingestion/` — idempotency (load-bearing), stages, orchestrator, api, structural-after
+  (4C↔5A) — **15 tests, all pass**.
 
 ---
 
@@ -101,111 +78,93 @@ Only `ORDER BY` is interpolated, from a closed Literal→fragment map.
 
 | ADR | Decision |
 |-----|---------|
-| [0028](docs/decisions/0028-structural-tools-scope.md) | Four structural tools not seven; recency/orphans/provenance fold into parameters; typed parameterised Cypher (no label interpolation); heterogeneous case-insensitive identity; status normalisation; path-finding/generated-Cypher deferred |
-| [0029](docs/decisions/0029-router-redesign-two-stage-conceptual.md) | Router prompt redesigned as two-stage conceptual routing (shape → route) in one LLM call, 20 few-shots, explicit priority rule |
-| [0030](docs/decisions/0030-verification-skip-for-structural.md) | Verification skips the inline-citation check only when route is structural AND no events were returned (e.g. aggregate count) |
+| [0031](docs/decisions/0031-incremental-reconciliation.md) | Per-event incremental reconciliation, **hybrid scoping**: reuse cheap idempotent batch stages as-is; truly scope only the cost-bearing stages (extraction skip-guard; resolution to newly-created fragments; scoped concurrent contradiction). Scope derived from the graph by provenance. |
+| [0032](docs/decisions/0032-idempotency-contract.md) | Layered idempotency: endpoint dedup → orchestration guard → extraction skip-guard → MERGE-everywhere. "Extraction reuse" = skip LLM + re-derive scope from graph (the audit row stores counts, not the payload). |
+| [0033](docs/decisions/0033-single-writer-lock.md) | One in-process `asyncio.Lock` serialises ingestions (MERGE doesn't make read-modify-write atomic); 503 on 30s timeout; production path = per-canonical-node locking + advisory/partitioned coordination. |
 
 ---
 
 ## Deviations from Spec
 
-1. **Cypher labels/edges are parameters, not interpolated.** The spec's pseudo-Cypher used
-   `MATCH (n:$NodeLabel)` and `[:$has_no_edge]`. To honour CLAUDE.md's "parameterised queries
-   only" rule with zero injection surface, the implementation uses `$node_type IN labels(n)`,
-   `type(r) = $edge`, `startNode(r)=n`, and `EXISTS{…WHERE type(r)=$has_no_edge}`. Only
-   `ORDER BY` (which Cypher cannot parameterise) is interpolated from a closed Literal map.
-
-2. **Identity matching is heterogeneous + case-insensitive**, not `canonical_id`-only. The
-   live graph keys Person by `canonical_id`, Service/System/Team by `canonical_name`, Decision
-   and Message by `id`; team names are capitalised. A `canonical_id`-only match (spec draft)
-   would only ever hit Person nodes. Caught in the pre-implementation schema check.
-
-3. **Status semantics normalised** beyond the spec's literal "active/deprecated/all": `active`
-   excludes merged+deprecated+superseded; `deprecated` is the ended-but-not-merged set; `all`
-   excludes only merged. Real status values are inconsistent (Person/Team have none; one
-   Service is `deployed`; Decision uses `superseded`), so the filter is defined on `coalesce`.
-
-4. **Edge enum uses the real closed vocabulary**, not the spec's list (which had a typo
-   `ASSERTS` and omitted `ABOUT`/`APPROVED_BY`/`AUTHORED`). `AUTHORED`/`MENTIONS` exist in the
-   schema but have 0 instances (extraction sparsity) — valid enum members regardless.
-
-5. **Result types live in the query modules (re-exported from `schemas.py`)**, mirroring the
-   four KQ result models, rather than being defined in `schemas.py`. Cleaner co-location; the
-   deliverable's "schemas.py adds the result types" is met via re-export.
-
-6. **`tool_output` added to `AskResponse` + the streaming `complete` event.** The spec's
-   frontend renderers need the structured output, which Phase 4A's response did not carry.
-   Populated only for the four structural routes.
-
-7. **New synthesis path for event-less structural answers** (`synthesis_structural.txt` +
-   `StructuralAnswer`). Required because `AnswerWithCitations.citations` has `min_length=1`,
-   which would reject a citation-free aggregate answer. Decision 8 described the verification
-   skip but not this schema split, which is the mechanism that makes it work.
+1. **`source_kind` restricted to `doc` / `slack_message`.** The Postgres `sourcetype` enum has only
+   these two; the spec's `adr` / `meeting` would fail at the DB. Documented; `ALTER TYPE` deferred
+   (the demo doesn't need them). Decided with the user before coding.
+2. **Hybrid scoping, not strict per-node-id everywhere.** Decided with the user. `scoped_temporal.py`
+   is a documented pass-through; only extraction + resolution + contradiction are truly scoped. The
+   decisive optimisation was scoping resolution to *newly-created fragments* (sole-provenance nodes),
+   which took the worst case 52s → 16s (a re-mention resolves nothing, as it should).
+3. **Extraction "reuse" can't reload the extracted result** — `extraction_runs` stores counts only.
+   So reuse = skip the LLM and re-derive scope from the graph by provenance (ADR 0032). This is the
+   idempotency-correct interpretation of Decision 3.
+4. **"Materialize Message node" is an extra stage (6b).** Message nodes are mechanical, not extracted;
+   a new slack event needs its `:Message` node MERGEd before contradiction detection. The spec's 8
+   stages omitted it.
+5. **`reconcile_event` takes `session_factory`, not a single `session`** — stages open independent
+   per-step sessions and commit per step (mirrors the extraction pipeline).
+6. **`merge_decisions` is append-only (not pair-deduped).** Decision 3 assumed a pre-write pair check;
+   the live resolver has none. Idempotency of the audit comes from the orchestration guard, not
+   stage-level dedup (ADR 0032, named honestly).
+7. **Fixed a pre-existing 4C frontend build break** (`findLast` / es2023 lib) so the stack rebuilds.
 
 ---
 
 ## Open Questions
 
-1. **Path-finding is deferred** (documented in ADR 0028). "How is A connected to B?" needs
-   variable-length traversal + a path result shape; bundled with the routing-scale upgrade.
-2. **Graph sparsity is real, not a bug.** Only 2 `MEMBER_OF` edges exist (both → Payments), so
-   "who's on the Growth team?" returns nobody. The tools are correct; the extracted data is
-   sparse. Noted in the eval Discussion.
-3. **Latency still misses the 4s target** (7499ms mean, inflated by one q37 retry). Unchanged
-   from 4A — two sequential LLM calls. Streaming mitigates perceived latency; true reduction
-   needs cached/parallel routing (agent-architecture production-scale section).
-4. **Pre-existing failures remain** (`test_audit.py`, `test_events.py`, `test_graph.py`,
-   `test_seeder.py` — 12 fail / 7 pass in those files, identical with and without 4C). DB-state
-   / test-environment issues, not 4C-related; confirmed via stash comparison.
-5. **Pre-existing mypy errors remain** (39, all in `search/retriever.py`, the streaming
-   `api_router.py`, `streaming_eval.py`, etc.). Count is identical at HEAD and now — 4C added
-   zero. All four new query modules + new agent code are mypy-strict clean.
+1. **Resolution adjudication is still sequential** — the eval's 15s tail (`doc-new-person`: a new
+   person vs 13 similar people). Contradiction already fans out concurrently; the same treatment for
+   resolution is the next latency win. Deferred to keep the scoped resolver a faithful reuse of 3A.
+2. **`force=True` replay can append audit rows** for re-adjudicated fragments — the deep stage-level
+   idempotency holds for graph state (MERGE) but not for the append-only audit. The default path uses
+   the guard, so this is an operator-escape-hatch caveat, not a demo concern.
+3. **Best-effort merge attribution** — `_merges_for_event` matches either MERGE_INTO endpoint by
+   provenance; for a brand-new event id this is exact, but it is attribution, not a ledger.
+4. **Pre-existing failures/mypy errors remain** unchanged from 4C (DB-state test files; the 39
+   pre-existing mypy errors in older modules). `app/ingestion/` is mypy-strict clean (0 new errors).
 
 ---
 
 ## Definition of Done Check
 
-- ✓ `docs/design/structural-tools.md` (~1050 words)
-- ✓ Three ADRs (0028, 0029, 0030)
-- ✓ Four typed Cypher functions in `app/queries/`, each with full testcontainer coverage (23 tests)
-- ✓ Four agent tool nodes wired into the StateGraph
-- ✓ Router prompt redesigned (two-stage conceptual, 20 few-shots, priority rule)
-- ✓ Synthesis + verification updated; structural tools work without fabricating citations
-- ✓ `POST /api/ask` and `POST /api/ask/stream` handle all 10 routes (smoke-tested live)
-- ✓ `/ask` page renders all four new result types (4 renderer tests pass)
-- ✓ Extended eval ran end-to-end on 42 questions; real numbers in the report
-- ✓ Route accuracy 1.000 (≥ 0.85); structural-only 1.000 (≥ 0.90)
-- ✓ All Phase 4A/4B tests still pass; new tests pass (422 passed in full suite; failures all pre-existing)
-- ✓ `mypy --strict` clean across all new code (0 new errors vs HEAD)
-- ✓ `docker compose up` stack live; new routes reachable through nginx (port 3000 smoke test)
-- ✓ Acceptance test: "name of all the employees" → `enumerate` → all 13 Person nodes (live-verified)
-- ✓ HANDOFF.md updated (4B reference commit `5bc27f2`)
+- ✓ `docs/design/incremental-reconciliation.md` — 1598 words
+- ✓ Three ADRs (0031, 0032, 0033)
+- ✓ `POST /api/events` works against the live backend; ingestion ≤ 8s mean (**5.8s measured**)
+- ✓ `/ingest` page renders, form submits, `ReconciliationView` shows the per-stage timeline + what-changed
+- ✓ Graph page refetches on focus
+- ✓ All 8 stages work and are individually testable
+- ✓ `merge_decisions` records resolution from ingestion; `ingestion_runs` one row per ingestion
+- ✓ **Idempotency test passes** (guard short-circuit + forced-replay node stability + single LLM call)
+- ✓ Ingestion eval ran on 11 cases — **100% success & pass, 5.8s mean, $0.0031/event**; results doc has real numbers + Discussion
+- ✓ **Structural acceptance** verified live: ingest a hire → `enumerate` returns 14 (was 13); agent flow confirmed through HTTP
+- ✓ KQs / structural tools / search / agent all still work after ingestion (live-checked: enumerate=14, agent answers)
+- ✓ `mypy --strict` clean across `app/ingestion/` (8 files)
+- ✓ New tests pass (15 ingestion + 4 frontend); regression subset green (57 passed: migrations/models/app/repos); pre-existing failures not grown
+- ✓ `docker compose up` brings the full stack incl. the ingestion endpoint (rebuilt + verified live; baseline restored to 13/10/89/14/5/4)
+- ✓ HANDOFF updated (4C reference commit `a867123`)
 
 ---
 
 ## State of the Codebase
 
-**Backend:** `app/queries/` gained `structural_common.py` + four tool modules. `app/agent/`
-modified: `state.py`, `schemas.py`, `tools.py`, `graph.py`, `verification.py`, `synthesis.py`,
-`config.py`, `runner.py`, `api_router.py`, `prompts/{router,synthesis}.txt` + new
-`prompts/synthesis_structural.txt`. `app/eval/agent_eval.py` extended. `data/agent_eval_questions.json`
-30 → 42.
+**Backend:** new `app/ingestion/` package (orchestrator, stages, 3 scoped wrappers, schemas, api_router);
+`app/contradiction/` gained `scoped.py` + `ingest_one_message` + `WrittenContradiction`;
+`db/repositories/ingestion_runs.py`; `models/ingestion_runs.py` (+ registered in `models/__init__.py`);
+`alembic/versions/0005_ingestion_runs.py`; `main.py` registers the ingestion router;
+`app/eval/ingestion_eval.py` + `scripts/run_ingestion_eval.py`; `data/ingestion_eval_cases.json`.
 
-**Frontend:** `components/ask/results/` (4 renderers + dispatcher) added; `pages/Ask.tsx`,
-`components/ask/StreamProgress.tsx`, `types.ts` modified. New test `Ask.structural.test.tsx`.
+**Frontend:** `pages/Ingest.tsx`, `components/ingest/*`, `api/ingest.ts`, ingestion types; `/ingest`
+route + nav + `g i` shortcut + graph refetch-on-focus; `tsconfig.app.json` lib → ES2023.
 
-**Docs:** structural-tools.md, ADRs 0028–0030, phase-4c-readiness, phase-4c eval results, demo
-beat extended, docs/README updated.
+**Docs:** incremental-reconciliation design, ADRs 0031–0033, phase-5a interview-prep, demo Beat 4,
+phase-5a eval results, docs/README updated.
 
-**Reference commit (4B baseline):** `5bc27f2` — "Phase 4B complete: streaming synthesis + agent UX polish".
+**Reference commit (4C baseline):** `a867123` — "4C complete".
 
 ---
 
 ## Next Subphase
 
-**Phase 5A — Streaming Ingestion.** The read path (extraction → resolve → query → agent) is
-complete through 4C. 5A turns the batch pipeline into an incremental one: new events arrive,
-get extracted, resolved against the existing graph at write time, and the graph reconciles in
-near-real-time (the "self-updating knowledge graph" thesis). Candidate work: an ingestion
-endpoint/worker, at-write-time entity resolution (the resolver was built standalone for this in
-3A), incremental embedding, and a demo beat showing a new Slack message updating an answer live.
+**Phase 5B — Observability + Ops.** 5A's reconciliation runs but is only observable via structured
+logs and the `ingestion_runs` table. 5B candidates: an ingestion-runs audit view on the frontend
+(mirroring `/audit`); metrics (latency/cost/stage histograms); parallelising resolution adjudication
+(the 15s tail); an SSE progress channel for the ingest page (Decision 7 Option B); and the production
+concurrency path (per-node locking). The read+write paths are now both complete end-to-end.

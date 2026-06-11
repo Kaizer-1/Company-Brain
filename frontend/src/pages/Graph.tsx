@@ -18,6 +18,9 @@ export function Graph() {
     queryKey: queryKeys.graph(view),
     queryFn: () => fetchGraph(view),
     staleTime: 30_000,
+    // Phase 5A: re-fetch when the tab regains focus so a live ingest on /ingest shows up here
+    // without a manual reload (ADR 0033 / Decision 7, Option A — polling on focus).
+    refetchOnWindowFocus: true,
   });
 
   const handleNodeHover = useCallback((node: GraphNode | null) => {

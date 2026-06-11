@@ -25,6 +25,7 @@ from app.api.events import router as events_router
 from app.api.graph import router as graph_router
 from app.api.health import router as health_router
 from app.api.queries import router as queries_router
+from app.ingestion.api_router import router as ingestion_router
 from app.search.router import router as search_router
 from app.config import settings
 from app.db.migrations import apply_migrations
@@ -136,6 +137,7 @@ app.include_router(health_router)
 app.include_router(queries_router)
 app.include_router(graph_router)
 app.include_router(events_router)
+app.include_router(ingestion_router)
 app.include_router(audit_router)
 app.include_router(search_router)
 app.include_router(agent_router)

@@ -20,6 +20,8 @@ if TYPE_CHECKING:
     from neo4j import AsyncDriver
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from app.schemas.postgres import EventDTO
+
 log = structlog.get_logger(__name__)
 
 _MERGE_MESSAGE = (
@@ -52,3 +54,28 @@ async def ingest_messages(driver: AsyncDriver, session: AsyncSession) -> int:
             ).consume()
     log.info("messages_ingested", count=len(slack_events))
     return len(slack_events)
+
+
+async def ingest_one_message(driver: AsyncDriver, event: EventDTO) -> str:
+    """MERGE the single Message node for one slack_message event; return its node id.
+
+    The scoped counterpart of ``ingest_messages`` used by live ingestion (Phase 5A): a new
+    slack event's Message atom must exist before scoped contradiction detection can compare it
+    against the active decisions. Uses the same idempotent ``MERGE`` keyed on
+    ``slack:<external_id>``, so calling it then later running the batch pass is a no-op.
+    """
+    node_id = f"slack:{event.source_external_id}"
+    async with driver.session() as s:
+        await (
+            await s.run(
+                _MERGE_MESSAGE,
+                id=node_id,
+                source_id="slack",
+                external_id=event.source_external_id,
+                content=event.content,
+                created_at=event.created_at.isoformat(),
+                eid=str(event.id),
+            )
+        ).consume()
+    log.info("message_ingested_one", message_id=node_id, event_id=str(event.id))
+    return node_id

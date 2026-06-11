@@ -26,3 +26,17 @@ class ContradictionResult(BaseModel):
     candidate_pairs: int = 0
     contradicts_written: int = 0
     llm_cost_usd: float = 0.0
+
+
+class WrittenContradiction(BaseModel):
+    """One CONTRADICTS edge written by a (scoped) detection pass.
+
+    Returned by the Phase-5A scoped detectors so the ingestion layer can surface exactly which
+    Message→Decision contradictions a live event produced, without reaching into Neo4j again.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    message_id: str
+    decision_id: str
+    confidence: float = Field(ge=0.0, le=1.0)

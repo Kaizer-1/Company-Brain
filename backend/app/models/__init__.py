@@ -9,6 +9,7 @@ from app.models.embeddings import EventEmbedding
 from app.models.enums import ExtractionStatus, MergeDecisionType, NodeType, SourceType
 from app.models.events import Event
 from app.models.extraction import ExtractionRun
+from app.models.ingestion_runs import IngestionRun
 from app.models.resolution import MergeDecision
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "EventEmbedding",
     "ExtractionRun",
     "ExtractionStatus",
+    "IngestionRun",
     "MergeDecision",
     "MergeDecisionType",
     "NodeType",
