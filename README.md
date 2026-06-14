@@ -202,6 +202,8 @@ Phase 5B built in-memory metrics first, then used them to validate the planned o
 
 ![Audit view](docs/screenshots/audit1.png)
 
+![Audit view](docs/screenshots/audit2.png)
+
 *The `/audit` page on the Ingestion runs tab. Each row is one live reconciliation: status, event snippet, per-stage dot timeline (green = ok, gray = skipped, red = failed), nodes created/merged, contradiction count, cost, and duration. The System metrics strip below reads from `/api/metrics` — total ingestions, median and p95 latency, mean cost, resolution adjudication breakdown.*
 
 ---
