@@ -6,9 +6,7 @@ A self-updating knowledge graph that ingests company intelligence — Slack mess
 
 ## Demo
 
-> **Recording in progress** — the 3-minute walkthrough script is at
-> [docs/demo/3-minute-walkthrough.md](docs/demo/3-minute-walkthrough.md).
-> The recorded Loom will be linked here once captured.
+> **Recording in progress** — The recorded Loom will be linked here once captured.
 
 <!-- When recorded:
 [![3-minute demo](docs/screenshots/graph.png)](LOOM_URL)
