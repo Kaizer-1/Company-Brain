@@ -382,3 +382,4 @@ This is a **synthetic-data portfolio project**. The following limitations are de
 ## License / contact
 
 Portfolio project — not intended for production use. Source is provided for review purposes.
+kaizer.dev247@gmail.com
