@@ -1,6 +1,6 @@
 # Company Brain
 
-A self-updating knowledge graph that ingests company intelligence — Slack messages, architecture decisions, meeting notes — and answers multi-hop questions with grounded, citation-verified answers. Built as a portfolio project to demonstrate where graph databases outperform pure RAG.
+A self-updating knowledge graph that ingests company intelligence — Slack messages, architecture decisions, meeting notes — and answers multi-hop questions with grounded, citation-verified answers.
 
 ---
 
