@@ -265,7 +265,7 @@ uv run mypy backend/         # strict mode; must pass clean
 cd frontend && npm install && npm test  # frontend tests (Vitest + React Testing Library)
 ```
 
-> **Note on integration tests:** tests that spin up live containers (`testcontainers`) require a Docker socket, which some environments block. The live eval harness runs those cases via `docker compose exec backend` instead. See [HANDOFF.md](HANDOFF.md) for the 5B deviation note.
+> **Note on integration tests:** tests that spin up live containers (`testcontainers`) require a Docker socket, which some environments block. The live eval harness runs those cases via `docker compose exec backend` instead.
 
 ---
 
