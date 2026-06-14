@@ -8,6 +8,8 @@
 > Python: `backend/app/queries/`, `backend/app/temporal/`, `backend/app/contradiction/`,
 > `backend/app/resolution/consolidator.py`. Eval: `backend/app/eval/query_eval.py`.
 
+**What this doc is.** This document describes how the four killer queries are implemented as typed Cypher traversals over the resolved, temporally-enriched knowledge graph. It covers the `as_of` convention that makes queries reproducible against the synthetic timeline, how Decision consolidation handles multi-source assertions of the same decision, the `QueryResult` provenance shape that attaches source event UUIDs to every answer, and how contradiction detection and Message population fit into the pipeline order. Read this before looking at `backend/app/queries/` or running the killer queries against a live graph.
+
 This is the payoff phase. The schema (1B), the synthetic corpus (2A), the extraction
 pipeline (2B), and the entity resolver (3A) all existed to make **the four killer queries**
 executable against a clean, resolved graph. This document locks the decisions that make
@@ -347,3 +349,12 @@ KQ edge is asserted in ≥1 doc *and* reinforced in Slack — is sufficient at t
 - **The React force-graph visualisation** — Phase 3C/4B.
 - **Open-world contradiction detection** — the detector is gated to the synthetic corpus's
   decision subjects; general contradiction mining is not claimed.
+
+---
+
+## Related ADRs
+
+- [ADR 0016](../decisions/0016-temporal-query-model.md) — `as_of` convention, `valid_from/to`, and the `SUPERSEDES` edge for decision lifecycle
+- [ADR 0017](../decisions/0017-multi-source-decision-consolidation.md) — Decision consolidation: why a Decision mentioned in multiple events needs deduplication
+- [ADR 0018](../decisions/0018-query-result-provenance.md) — `QueryResult` provenance shape: structural provenance, not optional metadata
+- [ADR 0019](../decisions/0019-contradiction-message-population.md) — Why contradiction detection and Message population run as a separate post-resolution pass

@@ -220,3 +220,10 @@ from the agent's understanding of the user's intent. The per-stage timing in `Se
 is the latency breakdown the agent will report. The `related_entity_ids` field on each hit
 enables the agent to cross-reference search results against the graph (e.g., "find events
 mentioning auth-service, then retrieve the blast radius of auth-service").
+
+---
+
+## Related ADRs
+
+- [ADR 0021](../decisions/0021-pgvector-dimension-migration.md) — Migrating `event_embeddings` from 1536-dim (placeholder) to 384-dim (bge-small-en-v1.5)
+- [ADR 0022](../decisions/0022-hybrid-search-blend-weights.md) — 0.7 vector + 0.3 graph-density blend: rationale and sensitivity analysis

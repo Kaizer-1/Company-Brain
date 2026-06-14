@@ -122,3 +122,11 @@ surface without moving its cost or latency profile, which is why the eval's per-
 and latency stay flat against the Phase 4A baseline. The only prompt-cost change is the larger
 router prompt (twenty few-shots instead of a flat list), which adds a few hundred input tokens
 to the routing call — quantified in `docs/eval/phase-4c-structural-results.md`.
+
+---
+
+## Related ADRs
+
+- [ADR 0028](../decisions/0028-structural-tools-scope.md) — What enumerate, aggregate, get_entity, and neighbors cover and deliberately don't
+- [ADR 0029](../decisions/0029-router-redesign-two-stage-conceptual.md) — Two-stage router redesign to accommodate the structural tool class
+- [ADR 0030](../decisions/0030-verification-skip-for-structural.md) — Why structural tool answers skip citation verification

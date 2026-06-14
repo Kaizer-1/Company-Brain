@@ -4,6 +4,8 @@
 > ADR reference: [ADR 0020](../decisions/0020-frontend-design-philosophy.md) (design philosophy).
 > Source: `frontend/`.
 
+**What this doc is.** This document describes the React frontend that makes the backend's capabilities visible in a 3-minute demo: five pages (ask, graph, search, ingest, audit), a force-directed graph canvas, streamed agent responses with clickable citations, and a live ingestion timeline. It is a demo-grade app — no auth, no real-time infrastructure, no error boundaries in production sense — and it names what it is not. Read this before touching `frontend/src/` or the Tailwind theme.
+
 ---
 
 ## 1. What this frontend is and what it is not
@@ -201,3 +203,9 @@ This is a demo frontend against a synthetic dataset. A production version would 
 5. **Error boundaries** — The current pages have inline error states but no React error
    boundaries for unexpected runtime exceptions. A production app needs `ErrorBoundary`
    components around each major panel.
+
+---
+
+## Related ADRs
+
+- [ADR 0020](../decisions/0020-frontend-design-philosophy.md) — Design philosophy: dark mode, 7-color palette, no shadcn defaults, component primitives

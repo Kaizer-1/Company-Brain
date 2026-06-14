@@ -2,6 +2,8 @@
 
 > **Status**: Locked in Phase 1C. Do not modify table shapes without a new ADR.
 
+**What this doc is.** This document describes the three Postgres tables that form the raw-event log, the embedding store, and the audit backbone for Company Brain. The graph (Neo4j) gets the query surface; Postgres gets everything that needs transactional guarantees, append-only semantics, or pgvector HNSW indexing. Read this to understand why `events` is immutable, what `event_embeddings` stores separately from `events`, and how the `extraction_runs` table enables failure detection and model-upgrade auditing.
+
 ---
 
 ## Design Philosophy
@@ -190,3 +192,10 @@ The provenance contract is the bridge between the two stores. Without it, the gr
 3. **Re-embedding strategy**: Phase 3D will pick the embedding model. When the model changes, all existing embeddings become stale. The `model_name` + `model_version` columns on `event_embeddings` make staleness detectable; the actual re-embedding workflow (batch job, background worker) is deferred.
 4. **Deduplication semantics**: `content_hash` detects exact-duplicate content. Near-duplicate detection (e.g., a message that was slightly edited before re-sending) is not implemented. Phase 3D's embedding similarity search could serve as a near-dup detector if needed.
 5. **`extraction_runs` retention**: audit rows accumulate indefinitely. A pruning strategy (keep only the latest N runs per event) may be needed at scale.
+
+---
+
+## Related ADRs
+
+- [ADR 0009](../decisions/0009-postgres-event-store-design.md) — Event store design: append-only, UUID-keyed, cross-store provenance contract
+- [ADR 0010](../decisions/0010-alembic-migrations.md) — Alembic migration strategy for Postgres schema changes

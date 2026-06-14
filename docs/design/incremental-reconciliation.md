@@ -155,3 +155,11 @@ proof — no screenshot interpretation required.
 **$0.0031/event**, idempotency verified, structural acceptance verified, and the demo graph baseline
 (13/10/89/14/5/4) is preserved after the run because every case reverts itself. See
 [../eval/phase-5a-ingestion-results.md](../eval/phase-5a-ingestion-results.md).
+
+---
+
+## Related ADRs
+
+- [ADR 0031](../decisions/0031-incremental-reconciliation.md) — Hybrid scoping: scope resolution + contradiction, reuse cheap stages globally
+- [ADR 0032](../decisions/0032-idempotency-contract.md) — Idempotency contract: MERGE everywhere, extraction skip-guard, dedup detection
+- [ADR 0033](../decisions/0033-single-writer-lock.md) — Single-writer advisory lock: why not optimistic concurrency at demo scale

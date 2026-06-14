@@ -383,3 +383,10 @@ The report shows the count of each mode per model and the three worst concrete e
 per category (the model's own `evidence_quote` plus what was expected), so the verdict in
 the Discussion section is grounded in specific, inspectable cases rather than aggregate
 numbers alone.
+
+---
+
+## Related ADRs
+
+- [ADR 0012](../decisions/0012-extraction-via-openrouter.md) — OpenRouter + JSON-mode + curated schema: why not function calling, why not deterministic rules
+- [ADR 0013](../decisions/0013-eval-ground-truth-from-narrative.md) — Eval ground truth derived from `narrative.py`: no hand-labelled annotation file

@@ -4,6 +4,8 @@
 > Migration strategy in [ADR 0008](../decisions/0008-cypher-migration-strategy.md).
 > Python representation in [`backend/app/schemas/graph.py`](../../backend/app/schemas/graph.py).
 
+**What this doc is.** This document is the long-form rationale for the Neo4j graph schema — the most consequential design decision in the project. The 6 node types and 10 edge types were chosen backward from the 4 killer queries: if multi-hop ownership requires Decision → System → Service → Person traversal, the schema must have those nodes and those edges. Read this to understand why the schema is closed (no new labels at runtime), what each node type and relationship type models, and what was explicitly rejected.
+
 This document is the long-form rationale for the Neo4j graph schema. It is the most consequential design artefact in the project: the schema defined here is locked into `CLAUDE.md` and every later phase — extraction (Phase 2), query engine (Phase 3), agent (Phase 4) — builds on it.
 
 ---
@@ -324,3 +326,11 @@ Decisions that genuinely cannot be made without writing the extraction prompts f
 3. **Confidence calibration.** What threshold separates a kept edge from a dropped one? Cannot be set until we see real extractor confidence distributions (Phase 2D).
 4. **Multi-valued ownership.** `OWNED_BY` is modelled N:1 in the common case but allowed N:M. Do we need a `primary: bool` property to disambiguate the owner-of-record? Deferred until the generator (Phase 2A) shows how often co-ownership occurs.
 5. **`Decision` supersession chain.** ~~Should a superseding decision link to the one it replaces via a `SUPERSEDES` edge?~~ **Resolved in Phase 3B (ADR 0016):** `SUPERSEDES` (`Decision -> Decision`) is now part of the closed vocabulary. KQ4's change timeline renders the supersession, and the temporal enricher uses the edge to set the superseded decision's `status='superseded'` and `valid_to`. The edge is derived (not extracted) from the decision body's "supersedes D-####" signal — see `backend/app/temporal/supersession.py`.
+
+---
+
+## Related ADRs
+
+- [ADR 0002](../decisions/0002-neo4j-as-graph-database.md) — Why Neo4j over a relational graph or property graph extension
+- [ADR 0007](../decisions/0007-graph-schema-v1.md) — Schema design rationale and closed-entity-type decision
+- [ADR 0008](../decisions/0008-cypher-migration-strategy.md) — Cypher migration strategy: why APOC, not raw schema migration files

@@ -30,3 +30,8 @@ data/
 
 # Eval harness on-disk extraction cache (re-creatable; never commit)
 .eval_cache/
+
+# Personal prep materials and internal session notes — not for public repo
+docs/interview-prep/
+HANDOFF.md
+CLAUDE.md

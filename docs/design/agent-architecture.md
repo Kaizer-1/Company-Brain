@@ -147,3 +147,11 @@ work; they map to Phase 4B and later.
   search scales via the HNSW index (Phase 3D). The router and synthesis costs are per-question
   and independent of corpus size — the architecture does not change with scale, only the
   indices behind the tools do.
+
+---
+
+## Related ADRs
+
+- [ADR 0023](../decisions/0023-typed-tools-not-generated-cypher.md) — Why typed Python tools instead of LLM-generated Cypher at runtime
+- [ADR 0024](../decisions/0024-route-then-execute-architecture.md) — Route-then-execute state machine: one classifier call, not ReAct
+- [ADR 0025](../decisions/0025-provenance-verification-loop.md) — Provenance verification loop: retry on hallucinated citation, not soft failure

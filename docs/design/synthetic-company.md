@@ -260,3 +260,9 @@ open-world data generation. The dataset is small and curated on purpose: its val
 adversarial *targeting*, not volume. Every limitation of the schema it exercises
 (Service/System fuzziness, deferred entity resolution, no `SUPERSEDES` edge) is named here
 and in the ADRs, not hidden.
+
+---
+
+## Related ADRs
+
+- [ADR 0011](../decisions/0011-synthetic-data-strategy.md) — Why synthetic data; adversarial test cases; single-source-of-truth eval discipline

@@ -178,3 +178,10 @@ regex mid-token and cause flicker. The full transform runs once on the finalized
 `backend/scripts/run_streaming_eval.py` measures time-to-first-synthesis-token for 10
 questions sampled from the Phase 4A eval set. Target: mean ≤ 3000ms. See
 `docs/eval/phase-4b-streaming-results.md` for results.
+
+---
+
+## Related ADRs
+
+- [ADR 0026](../decisions/0026-sse-not-websockets.md) — SSE over WebSockets: why unidirectional push is sufficient for this use case
+- [ADR 0027](../decisions/0027-stream-synthesis-only.md) — Why only the synthesis step streams, not the full agent trace

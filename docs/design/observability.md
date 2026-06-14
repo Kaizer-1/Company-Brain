@@ -98,3 +98,10 @@ bounded (it collapses the tail wherever Tier-2 fan-out is large, demonstrated un
 high-fan-out experiment), but the headline cause of the slow case was mis-attributed in 5A. That
 correction *is* the measure-then-optimise philosophy working — see
 [../eval/phase-5b-observability-results.md](../eval/phase-5b-observability-results.md) and ADR 0035.
+
+---
+
+## Related ADRs
+
+- [ADR 0034](../decisions/0034-in-memory-metrics-for-demo-scale.md) — In-memory metrics registry: volatile by design, production path documented
+- [ADR 0035](../decisions/0035-parallel-resolution-adjudication.md) — Parallel Tier-2 adjudication under Semaphore(5): measured 4.0× speedup

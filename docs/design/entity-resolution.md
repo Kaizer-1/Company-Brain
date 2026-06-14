@@ -5,6 +5,8 @@
 > ground truth for the resolver's behaviour; the code in `backend/app/resolution/`
 > implements exactly what is described here.
 
+**What this doc is.** This document explains how Company Brain resolves the duplicate nodes the extraction pipeline inevitably creates — `@alice`, `Alice Chen`, and `alice.chen@northwind.io` should be one Person node, not three. It describes the three-tier confidence model (deterministic rules → LLM adjudication → leave-alone), why merges are non-destructive (MERGE_INTO edges, not node deletion), and how every resolution attempt — merge and no-merge alike — is recorded in the `merge_decisions` audit table. Read this before looking at `backend/app/resolution/` or the `/audit` page.
+
 ## Problem statement
 
 The Phase 2B extraction pipeline is, by design, *best-effort on identity*. It keys a
@@ -300,3 +302,10 @@ metric is measuring the resolver and not itself.
 - **No incremental resolution as the graph grows.** Each run resolves the current graph from
   scratch; there is no streaming/at-write-time resolution and no re-resolution trigger when
   new events arrive. That is Phase 4.
+
+---
+
+## Related ADRs
+
+- [ADR 0014](../decisions/0014-entity-resolution-tiered-confidence.md) — Tiered confidence model: why 3 tiers, why the 0.75 cosine floor
+- [ADR 0015](../decisions/0015-merge-decisions-audit-table.md) — `merge_decisions` audit table: non-destructive merges, Postgres as the record
